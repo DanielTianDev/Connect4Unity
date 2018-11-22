@@ -18,6 +18,7 @@ public class Main : MonoBehaviour {
     public float robotSpeed = 1f;
 
     public GameObject[] animationPrefabs;
+    public GameObject explosionPrefab;
 
     GameObject parentTransform;
     GameObject visualArrow;
@@ -111,14 +112,9 @@ public class Main : MonoBehaviour {
         if (Input.GetKeyDown(KeyCode.F10)) //ai hack
         {
 
-            int colIndex = FindBestMove(Board, MaxDepth);
-            int r = PlacePiece(colIndex, Board, MAXIMIZER);
-            print(r);
-            var go = Instantiate(maximizerPrefab, PieceSpawnLocations[colIndex], maximizerPrefab.transform.rotation);
-            go.GetComponent<Piece>().SetCol(VisualBoard[r, colIndex].transform.position);
-            placedPieces.AddFirst(go);
-            if (Win(MAXIMIZER))
-               print("AI2 has won!");
+            _t1 = new Thread(_PlaceAiPiece);
+            if (!_t1.IsAlive)
+                _t1.Start();
         }
 
         if (Input.GetKeyDown(KeyCode.F11)) //player hack
@@ -212,7 +208,10 @@ public class Main : MonoBehaviour {
         go.GetComponent<Piece>().SetCol(VisualBoard[aiRow, aiColIndex].transform.position);
         placedPieces.AddFirst(go);
         if (Win(MAXIMIZER))
+        {
+        	Destroy(Instantiate(explosionPrefab), 5f);
             print("AI2 has won!");
+        }
 
         aiTurn = false;
 

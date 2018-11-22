@@ -756,6 +756,7 @@ MonoBehaviour:
   - {fileID: 161038, guid: 5bdc8a514a8999e42a9bffe61f562c09, type: 2}
   - {fileID: 158604, guid: bd494d4bb831abf499ac7e0cc247852f, type: 2}
   - {fileID: 191280, guid: 61f0f47502659364589592bc4b54c36a, type: 2}
+  explosionPrefab: {fileID: 100010, guid: 1f4af50754a37fa4cb096198d03ad60e, type: 2}
   MaxDepth: 5
 --- !u!4 &846908539
 Transform:
@@ -1425,7 +1426,7 @@ MonoBehaviour:
   m_MinValue: 0
   m_MaxValue: 10
   m_WholeNumbers: 1
-  m_Value: 0
+  m_Value: 5
   m_OnValueChanged:
     m_PersistentCalls:
       m_Calls:
