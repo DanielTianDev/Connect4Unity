@@ -4,7 +4,7 @@ using UnityEngine;
 using System.Threading;
 using UnityEngine.UI;
 using UnityEngine.Animations;
-
+//https://www.quora.com/How-do-I-make-Minimax-algorithm-incredibly-fast-How-do-I-deepen-the-game-search-tree
 public class Main : MonoBehaviour {
 
 
@@ -35,8 +35,16 @@ public class Main : MonoBehaviour {
     int aiColIndex;
     int aiRow;
     bool threadFin;
+    LinkedList<GameObject> placedPieces = new LinkedList<GameObject>();
 
     Vector3 roboOriginalLocation;
+
+    TextMesh robotStatusText;
+    bool robotThinking;
+    bool isGameOver;
+
+    Text gameStatusText;
+    
 
     void Start() {
         parentTransform = GameObject.Find("Board");
@@ -50,13 +58,16 @@ public class Main : MonoBehaviour {
         //spawn robot
         Robot.transform.position = new Vector3(PieceSpawnLocations[currentSelectionIndex].x, PieceSpawnLocations[currentSelectionIndex].y+0.5f, PieceSpawnLocations[currentSelectionIndex].z);
         roboOriginalLocation = Robot.transform.position;
+
+        robotStatusText = GameObject.Find("ThinkingText").GetComponent<TextMesh>(); 
+        gameStatusText = GameObject.Find("StatusText").GetComponent<Text>();
     }
 
     public void ChangeDifficulty()
     {
         int val = (int)GameObject.Find("DifficultySlider").GetComponent<Slider>().value;
         MaxDepth = val;
-        GameObject.Find("DifficultyText").GetComponent<Text>().text = "MaxDepth: " + MaxDepth;
+        GameObject.Find("DifficultyText").GetComponent<Text>().text = "Difficulty(Depth): " + MaxDepth;
     }
 
     void SpawnBoardLocations()
@@ -77,16 +88,18 @@ public class Main : MonoBehaviour {
         
     }
 
-    LinkedList<GameObject> placedPieces = new LinkedList<GameObject>();
-
     private void Update()
     {
         if (threadFin)
         {
             threadFin = false;
             StartCoroutine(AnimateRobot());
+            robotStatusText.text = "";
         }
         
+        if (Input.GetKeyDown(KeyCode.R)) ResetGame();
+
+        if(isGameOver) return;
 
         if (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.Space))
         {
@@ -100,21 +113,22 @@ public class Main : MonoBehaviour {
             if (Win(MINIMIZER))
             {
                 StartCoroutine(RobotDeath());
-                print("Player has won!");
+                gameStatusText.text = "Player has won!";
                 return;
             }
-            
+
+            robotThinking= true;
+            StartCoroutine(AnimateRobotThinkingText());
+
             _t1 = new Thread(_PlaceAiPiece);
-            if (!_t1.IsAlive)
-                _t1.Start();
+            if (!_t1.IsAlive) _t1.Start();
         }
 
         if (Input.GetKeyDown(KeyCode.F10)) //ai hack
         {
 
             _t1 = new Thread(_PlaceAiPiece);
-            if (!_t1.IsAlive)
-                _t1.Start();
+            if (!_t1.IsAlive) _t1.Start();
         }
 
         if (Input.GetKeyDown(KeyCode.F11)) //player hack
@@ -127,11 +141,9 @@ public class Main : MonoBehaviour {
             if (Win(MINIMIZER))
             {
                 StartCoroutine(RobotDeath());
-                print("Player has won!");
+                gameStatusText.text = "Player has won!";
             }
         }
-
-        if (Input.GetKeyDown(KeyCode.R)) ResetGame();
 
         if(Input.GetKeyDown(KeyCode.LeftArrow) || Input.GetKeyDown(KeyCode.A))
         {
@@ -152,11 +164,11 @@ public class Main : MonoBehaviour {
     private void _PlaceAiPiece()
     {
         aiTurn = true;
-
         aiColIndex = FindBestMove(Board, MaxDepth);
         aiRow = PlacePiece(aiColIndex, Board, MAXIMIZER);
 
         threadFin = true;
+        robotThinking = false;
         Thread.CurrentThread.Abort();
 
     }
@@ -171,13 +183,38 @@ public class Main : MonoBehaviour {
 
         Robot.transform.position = roboOriginalLocation;
         robotAnimator.SetBool("dead", false);
+        gameStatusText.text = "";
     }
 
     IEnumerator RobotDeath()
     {
         robotAnimator.SetBool("dead", true);
         yield return new WaitForSeconds(0.65f);
-        Robot.transform.Translate(new Vector3(0, -0.65f, 0));
+        Robot.transform.position = new Vector3(roboOriginalLocation.x, roboOriginalLocation.y-0.65f, roboOriginalLocation.z);
+    }
+
+    IEnumerator AnimateRobotThinkingText()
+    {
+        int temp = 0;
+        robotStatusText.transform.position = new Vector3(Robot.transform.position.x+0.5f, Robot.transform.position.y + 2.25f, Robot.transform.position.z);
+        while(robotThinking){
+            if(temp == 0){
+                robotStatusText.text = "Thinking";
+                temp = 1;
+            }else if(temp== 1){
+                robotStatusText.text = "Thinking.";
+                temp = 2;
+            }else if(temp==2){
+                robotStatusText.text = "Thinking..";
+                temp = 3;
+            }else{
+                robotStatusText.text = "Thinking...";
+                temp = 0;
+            }
+            yield return new WaitForSeconds(0.4f);
+        }
+       
+        robotStatusText.text = "";
     }
 
     IEnumerator AnimateRobot()
@@ -209,8 +246,8 @@ public class Main : MonoBehaviour {
         placedPieces.AddFirst(go);
         if (Win(MAXIMIZER))
         {
-        	Destroy(Instantiate(explosionPrefab), 5f);
-            print("AI2 has won!");
+            Destroy(Instantiate(explosionPrefab), 5f);
+            gameStatusText.text = "AI has won!";
         }
 
         aiTurn = false;
@@ -229,7 +266,7 @@ public class Main : MonoBehaviour {
                 //make the move
                 int[,] tempBoard = CopyBoard(board);
                 PlacePiece(col, tempBoard, MAXIMIZER);
-                int moveVal = Minimax(tempBoard, maxDepth, 0, false);
+                int moveVal = Minimax(tempBoard, maxDepth, 0, false, int.MinValue, int.MaxValue);
                 if (moveVal > bestVal)
                 {
                     bestMoveColumnIndex = col;
@@ -240,11 +277,11 @@ public class Main : MonoBehaviour {
         return bestMoveColumnIndex;
     }
 
-    int Minimax(int[,] board, int maxDepth, int currentDepth, bool isMax)
+    int Minimax(int[,] board, int maxDepth, int currentDepth, bool isMax, int alpha, int beta)
     {
-        int score = Evaluate(board);
-        if (score == 1000) return score;
-        if (score == -1000) return score; //minimizer won
+        int score = Evaluate(board) - (currentDepth);
+        if (score >= winScore-20000) return score + currentDepth;
+        if (score < loseScore+20000) return score - currentDepth; //minimizer won
         if (!IsMovesLeft() || currentDepth >= maxDepth) return score; //might be a tie? 
 
         if (isMax)
@@ -258,8 +295,11 @@ public class Main : MonoBehaviour {
                     int[,] tempBoard = CopyBoard(board);
                     PlacePiece(col, tempBoard, MAXIMIZER);
                     //call minimax recursively and choose the max value
-                    int result = Minimax(tempBoard, maxDepth, currentDepth + 1, !isMax);
+                    int result = Minimax(tempBoard, maxDepth, currentDepth + 1, !isMax, alpha, beta);
                     if (result > best) best = result;
+                    if(best > alpha) alpha = best;
+
+                    if(beta <= alpha) break;
                 }
             return best;
         }
@@ -273,8 +313,10 @@ public class Main : MonoBehaviour {
                 {
                     int[,] tempBoard = CopyBoard(board); //make the move
                     PlacePiece(col, tempBoard, MINIMIZER);
-                    int result = Minimax(tempBoard, maxDepth, currentDepth + 1, !isMax); //call minimax recursively and choose the mininum value
+                    int result = Minimax(tempBoard, maxDepth, currentDepth + 1, !isMax, alpha, beta); //call minimax recursively and choose the mininum value
                     if (result < best) best = result;
+                    if(best < beta) beta = best;
+                    if(beta <= alpha) break;
                 }
             return best;
         }
@@ -306,8 +348,67 @@ public class Main : MonoBehaviour {
         return -1;
     }
 
-    //not used yet, could be a better heuristic
-    int GetWinningMoveCount(int[,] board, int player)
+    bool IsMovesLeft()
+    {
+        for (int row = 0; row < Board.GetLength(0); row++)
+            for (int col = 0; col < Board.GetLength(1); col++)
+                if (Board[row, col] == 0) return true;
+
+        return false;
+    }
+
+    const int winScore = 1000000;
+    const int loseScore = -100000;
+    int Evaluate(int[,] board) //Scoring function - There should be 69 possible ways to win on an empty board.
+    {
+        //1 - look at rows first (24 ways to win)
+        for (int row = 0; row < board.GetLength(0); row++)
+            for (int col = 0; col < 4; col++) //only need to look at 4 ways to win per  
+                if ((board[row, col] == board[row, col + 1]) &&
+                   (board[row, col] == board[row, col + 2]) &&
+                   (board[row, col] == board[row, col + 3]))
+                    if (board[row, col] == MAXIMIZER) return winScore;
+                    else if (board[row, col] == MINIMIZER) return loseScore;
+
+        //2 - look at vertical (3 * 7 = 21 ways)
+        for (int row = 0; row < 3; row++)
+            for (int col = 0; col < board.GetLength(1); col++) //only need to look at 4 ways to win per  
+                if ((board[row, col] == board[row + 1, col]) &&
+                   (board[row, col] == board[row + 2, col]) &&
+                   (board[row, col] == board[row + 3, col]))
+                    if (board[row, col] == MAXIMIZER) return winScore;
+                    else if (board[row, col] == MINIMIZER) return loseScore;
+
+        //3 - look at diagonal right and down (12), right to up (12)
+        for (int col = 0; col < 4; col++)
+        {
+            for (int row = 0; row < 3; row++)
+                if ((board[row, col] == board[row + 1, col + 1]) &&
+                    (board[row, col] == board[row + 2, col + 2]) &&
+                    (board[row, col] == board[row + 3, col + 3]))
+                    if (board[row, col] == MAXIMIZER) return winScore;
+                    else if (board[row, col] == MINIMIZER) return loseScore;
+
+            for (int row = 3; row < 6; row++)
+                if ((board[row, col] == board[row - 1, col + 1]) &&
+                    (board[row, col] == board[row - 2, col + 2]) &&
+                    (board[row, col] == board[row - 3, col + 3]))
+                    if (board[row, col] == MAXIMIZER)
+                        return winScore;
+                    else if (board[row, col] == MINIMIZER)
+                        return loseScore;
+        }
+
+        //return 0;
+        return GettingWinningMoveCount(board, MAXIMIZER) - GettingWinningMoveCount(board, MINIMIZER);
+    }
+
+
+
+    const int threeInARowValue = 30;
+    const int twoInARow = 10;
+
+    int GettingWinningMoveCount(int[,] board, int player)
     {
         //There should be 69 possible ways to win on an empty board.
         int winningMoves = 0;
@@ -325,8 +426,8 @@ public class Main : MonoBehaviour {
             for (int col = 0; col < board.GetLength(1); col++) //only need to look at 4 ways to win per  
                 if ((board[row, col] == 0 || board[row, col] == player) &&
                    (board[row + 1, col] == 0 || board[row + 1, col] == player) &&
-                   (board[row + 1, col] == 0 || board[row + 2, col] == player) &&
-                   (board[row + 1, col] == 0 || board[row + 3, col] == player))
+                   (board[row + 2, col] == 0 || board[row + 2, col] == player) &&
+                   (board[row + 3, col] == 0 || board[row + 3, col] == player))
                     winningMoves++;
 
         //3 - look at diagonal right and down (12), right to up (12)
@@ -351,58 +452,116 @@ public class Main : MonoBehaviour {
             }
         }
 
-        return winningMoves;
-    }
 
-    bool IsMovesLeft()
-    {
-        for (int row = 0; row < Board.GetLength(0); row++)
-            for (int col = 0; col < Board.GetLength(1); col++)
-                if (Board[row, col] == 0) return true;
-
-        return false;
-    }
-
-    int Evaluate(int[,] board) //Scoring function - There should be 69 possible ways to win on an empty board.
-    {
-        //1 - look at rows first (24 ways to win)
+        //Look at rows of XXX_ XX_X X_XX _XXX
         for (int row = 0; row < board.GetLength(0); row++)
             for (int col = 0; col < 4; col++) //only need to look at 4 ways to win per  
-                if ((board[row, col] == board[row, col + 1]) &&
-                   (board[row, col] == board[row, col + 2]) &&
-                   (board[row, col] == board[row, col + 3]))
-                    if (board[row, col] == MAXIMIZER) return 1000;
-                    else if (board[row, col] == MINIMIZER) return -1000;
+                if ((board[row, col] == player) &&
+                   (board[row, col + 1] == player) &&
+                   (board[row, col + 2] == player) &&
+                   (board[row, col + 3] == 0))
+                    winningMoves+=threeInARowValue;
+                else if ((board[row, col] == player) &&
+                   (board[row, col + 1] == player) &&
+                   (board[row, col + 2] == 0) &&
+                   (board[row, col + 3] == player))
+                    winningMoves+=threeInARowValue;
+                else if ((board[row, col] == player) &&
+                   (board[row, col + 1] == 0) &&
+                   (board[row, col + 2] == player) &&
+                   (board[row, col + 3] == player))
+                    winningMoves+=threeInARowValue;
+                else if ((board[row, col] == 0) &&
+                   (board[row, col + 1] == player) &&
+                   (board[row, col + 2] == player) &&
+                   (board[row, col + 3] == player))
+                    winningMoves+=threeInARowValue;
+                else if ((board[row, col] == player) && //look at 2 in a rows XX__ _XX_ __XX
+                   (board[row, col + 1] == player) &&
+                   (board[row, col + 2] == 0) &&
+                   (board[row, col + 3] == 0))
+                    winningMoves+=twoInARow;
+                else if ((board[row, col] == 0) &&
+                   (board[row, col + 1] == player) &&
+                   (board[row, col + 2] == player) &&
+                   (board[row, col + 3] == 0))
+                    winningMoves+=twoInARow;
+                else if ((board[row, col] == 0) &&
+                   (board[row, col + 1] == 0) &&
+                   (board[row, col + 2] == player) &&
+                   (board[row, col + 3] == player))
+                    winningMoves+=twoInARow;
 
-        //2 - look at vertical (3 * 7 = 21 ways)
-        for (int row = 0; row < 3; row++)
+        //Look at columns
+        //_
+        //_  
+        //X 
+        //X 
+        for (int row = 5; row >= 3; row--)
             for (int col = 0; col < board.GetLength(1); col++) //only need to look at 4 ways to win per  
-                if ((board[row, col] == board[row + 1, col]) &&
-                   (board[row, col] == board[row + 2, col]) &&
-                   (board[row, col] == board[row + 3, col]))
-                    if (board[row, col] == MAXIMIZER) return 1000;
-                    else if (board[row, col] == MINIMIZER) return -1000;
+                if ((board[row, col] == player) &&
+                   (board[row - 1, col] == player) &&
+                   (board[row - 2, col] == 0) &&
+                   (board[row - 3, col] == 0))
+                    winningMoves+=twoInARow;
 
-        //3 - look at diagonal right and down (12), right to up (12)
+        /*
+        //diagonal of 3s
         for (int col = 0; col < 4; col++)
         {
             for (int row = 0; row < 3; row++)
-                if ((board[row, col] == board[row + 1, col + 1]) &&
-                    (board[row, col] == board[row + 2, col + 2]) &&
-                    (board[row, col] == board[row + 3, col + 3]))
-                    if (board[row, col] == MAXIMIZER) return 1000;
-                    else if (board[row, col] == MINIMIZER) return -1000;
+            {
+                if ((board[row, col] == player) &&
+                    (board[row + 1, col + 1] == player) &&
+                    (board[row + 2, col + 2] == player) &&
+                    (board[row + 3, col + 3] == 0))
+                    winningMoves+=threeInARowValue;
+                else if ((board[row, col] == player) &&
+                    (board[row + 1, col + 1] == player) &&
+                    (board[row + 2, col + 2] == 0) &&
+                    (board[row + 3, col + 3] == player))
+                    winningMoves+=threeInARowValue;
+                else if ((board[row, col] == player) &&
+                    (board[row + 1, col + 1] == 0) &&
+                    (board[row + 2, col + 2] == player) &&
+                    (board[row + 3, col + 3] == player))
+                    winningMoves+=threeInARowValue;
+                else if ((board[row, col] == 0) &&
+                    (board[row + 1, col + 1] == player) &&
+                    (board[row + 2, col + 2] == player) &&
+                    (board[row + 3, col + 3] == player))
+                    winningMoves+=threeInARowValue;
+            }
 
+            //other diagonal
             for (int row = 3; row < 6; row++)
-                if ((board[row, col] == board[row - 1, col + 1]) &&
-                    (board[row, col] == board[row - 2, col + 2]) &&
-                    (board[row, col] == board[row - 3, col + 3]))
-                    if (board[row, col] == MAXIMIZER)
-                        return 1000;
-                    else if (board[row, col] == MINIMIZER)
-                        return -1000;
-        }
-        return 0; //should be improved
+            {
+                if ((board[row, col] == player) &&
+                    (board[row - 1, col + 1] == player) &&
+                    (board[row - 2, col + 2] == player) &&
+                    (board[row - 3, col + 3] == 0))
+                    winningMoves+=threeInARowValue;
+                else if ((board[row, col] == player) &&
+                    (board[row - 1, col + 1] == player) &&
+                    (board[row - 2, col + 2] == 0) &&
+                    (board[row - 3, col + 3] == player))
+                    winningMoves+=threeInARowValue;
+                else if ((board[row, col] == player) &&
+                    (board[row - 1, col + 1] == 0) &&
+                    (board[row - 2, col + 2] == player) &&
+                    (board[row - 3, col + 3] == player))
+                    winningMoves+=threeInARowValue;
+                else if ((board[row, col] == 0) &&
+                    (board[row - 1, col + 1] == player) &&
+                    (board[row - 2, col + 2] == player) &&
+                    (board[row - 3, col + 3] == player))
+                    winningMoves+=threeInARowValue;
+            }
+           
+        }  */
+
+
+        return winningMoves;
     }
 
     bool Win(int player)
