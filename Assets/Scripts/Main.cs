@@ -3,13 +3,22 @@ using System.Collections.Generic;
 using UnityEngine;
 using System.Threading;
 using UnityEngine.UI;
-using UnityEngine.Animations;
 //https://www.quora.com/How-do-I-make-Minimax-algorithm-incredibly-fast-How-do-I-deepen-the-game-search-tree
+/**
+ * @Author: Daniel Tian
+ * @Date: November 22, 2018
+ * 
+ * Connect 4 Ai assignment 5 using minimax algorithm, and an evaluation function based on the Gaussian normal distributrion of the table, giving higher scores
+ * to positions nearer to the center of the board. There is improvements to be made, but it works alright as giving bias to the center positions will beat most humans
+ * who aren't experts or too familiar with the game, provided we can look ahead far enough.
+ * 
+ * 
+ * */
 public class Main : MonoBehaviour {
 
 
     GameObject[,] VisualBoard = new GameObject[6,7];
-    Vector3[] PieceSpawnLocations = new Vector3[7];
+    GameObject[] PieceSpawnLocations = new GameObject[7];
 
     public GameObject connect4Prefab;
     public GameObject minimizerPrefab, maximizerPrefab;
@@ -18,7 +27,12 @@ public class Main : MonoBehaviour {
     public float robotSpeed = 1f;
 
     public GameObject[] animationPrefabs;
+    public GameObject winningHighlightPrefab;
     public GameObject explosionPrefab;
+    public GameObject cursorPrefab;
+
+    public float aiTurnDelay = 0.55f;
+    GameObject cursorPrefabPointer;
 
     GameObject parentTransform;
     GameObject visualArrow;
@@ -28,6 +42,11 @@ public class Main : MonoBehaviour {
     const int MAXIMIZER = 1;
     const int MINIMIZER = 2;
     public int MaxDepth = 5;
+
+    readonly int winScore = 1000000;
+    readonly int loseScore = -1000000;
+    readonly int boardRows = 6;
+    readonly int boardColumns = 7;
 
     bool aiTurn = false;
 
@@ -43,24 +62,97 @@ public class Main : MonoBehaviour {
     bool robotThinking;
     bool isGameOver;
 
-    Text gameStatusText;
-    
+    Text gameStatusText, scoreText;
+    LinkedList<Vector3> winLocations = new LinkedList<Vector3>();
+    LinkedList<GameObject> tempHighlight = new LinkedList<GameObject>();
+
+    GameObject selectionPanel;
+
+    int playerScore, aiScore;
+    bool hasSelected;
 
     void Start() {
         parentTransform = GameObject.Find("Board");
         SpawnBoardLocations();
 
         visualArrow = GameObject.Find("ArrowContainer");
-        visualArrow.transform.position = new Vector3(PieceSpawnLocations[currentSelectionIndex].x, PieceSpawnLocations[currentSelectionIndex].y + 1.5f, PieceSpawnLocations[currentSelectionIndex].z);
+        visualArrow.transform.position = new Vector3(PieceSpawnLocations[currentSelectionIndex].transform.position.x, PieceSpawnLocations[currentSelectionIndex].transform.position.y + 1.5f, PieceSpawnLocations[currentSelectionIndex].transform.position.z);
 
         Robot = GameObject.Find("Robot");
         robotAnimator = Robot.GetComponent<Animator>();
         //spawn robot
-        Robot.transform.position = new Vector3(PieceSpawnLocations[currentSelectionIndex].x, PieceSpawnLocations[currentSelectionIndex].y+0.5f, PieceSpawnLocations[currentSelectionIndex].z);
+        Robot.transform.position = new Vector3(PieceSpawnLocations[currentSelectionIndex].transform.position.x, PieceSpawnLocations[currentSelectionIndex].transform.position.y+0.5f, PieceSpawnLocations[currentSelectionIndex].transform.position.z);
         roboOriginalLocation = Robot.transform.position;
 
         robotStatusText = GameObject.Find("ThinkingText").GetComponent<TextMesh>(); 
         gameStatusText = GameObject.Find("StatusText").GetComponent<Text>();
+        scoreText = GameObject.Find("ScoreText").GetComponent<Text>();
+        selectionPanel = GameObject.Find("Panel");
+
+        cursorPrefabPointer = Instantiate(cursorPrefab, cursorPrefab.transform.position, cursorPrefab.transform.rotation);
+
+    }
+
+
+    private void Update()
+    {
+        if (threadFin)
+        {
+            threadFin = false;
+            StartCoroutine(AnimateRobot());
+            robotStatusText.text = "";
+        }
+
+        if (Input.GetKeyDown(KeyCode.R)) ResetGame();
+
+        if (isGameOver || !hasSelected) return;
+
+        if (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.Space) || Input.GetMouseButtonDown(1))
+        {
+            PlacePiece(MINIMIZER);
+            PlacePiece(MAXIMIZER); //ai turn
+        }
+
+        if (Input.GetKeyDown(KeyCode.F10)) PlacePiece(MINIMIZER);//player debug
+        if (Input.GetKeyDown(KeyCode.F11)) PlacePiece(MAXIMIZER);  //ai debug        
+
+        if(Input.GetKeyDown(KeyCode.F12)) StartCoroutine( PlayTillEnd(aiTurnDelay));
+       
+
+        if (Input.GetKeyDown(KeyCode.LeftArrow) || Input.GetKeyDown(KeyCode.A))
+        {
+            currentSelectionIndex--;
+            if (currentSelectionIndex < 0) currentSelectionIndex = 6;
+            visualArrow.transform.position = new Vector3(PieceSpawnLocations[currentSelectionIndex].transform.position.x, PieceSpawnLocations[currentSelectionIndex].transform.position.y + 1.5f, PieceSpawnLocations[currentSelectionIndex].transform.position.z-0.5f);
+        }
+
+        if (Input.GetKeyDown(KeyCode.RightArrow) || Input.GetKeyDown(KeyCode.D))
+        {
+            currentSelectionIndex++;
+            if (currentSelectionIndex >= 7) currentSelectionIndex = 0;
+            visualArrow.transform.position = new Vector3(PieceSpawnLocations[currentSelectionIndex].transform.position.x, PieceSpawnLocations[currentSelectionIndex].transform.position.y + 1.5f, PieceSpawnLocations[currentSelectionIndex].transform.position.z - 0.5f);
+        }
+
+        RayCastSelect();
+    }
+
+    void RayCastSelect()
+    {
+        RaycastHit hit;
+        Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
+
+        if (Physics.Raycast(ray, out hit))
+        {
+            Transform objectHit = hit.transform;
+
+            if(objectHit.tag == "piece")
+            {
+                currentSelectionIndex = (int)-objectHit.position.x;
+                visualArrow.transform.position = new Vector3(PieceSpawnLocations[currentSelectionIndex].transform.position.x, PieceSpawnLocations[currentSelectionIndex].transform.position.y + 1.5f, PieceSpawnLocations[currentSelectionIndex].transform.position.z - 0.5f);
+            }
+
+            cursorPrefabPointer.transform.position = new Vector3(objectHit.transform.position.x, objectHit.transform.position.y, objectHit.transform.position.z+0.5f);
+        }
     }
 
     public void ChangeDifficulty()
@@ -84,84 +176,55 @@ public class Main : MonoBehaviour {
             }
         }
 
-        for(int col = 0; col < 7; col++) PieceSpawnLocations[col] = VisualBoard[0, col].transform.position;
+        for(int col = 0; col < 7; col++) PieceSpawnLocations[col] = VisualBoard[0, col];
         
     }
 
-    private void Update()
+
+    public void SelectWhoGoesFirst(int selection)
     {
-        if (threadFin)
+        if(selection == 0)
         {
-            threadFin = false;
-            StartCoroutine(AnimateRobot());
-            robotStatusText.text = "";
+            PlacePiece(MAXIMIZER); //ai turn
         }
-        
-        if (Input.GetKeyDown(KeyCode.R)) ResetGame();
 
-        if(isGameOver) return;
+        selectionPanel.SetActive(false);
+        hasSelected = true;
+    }
 
-        if (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.Space))
+    void PlacePiece(int player)
+    {
+        if (aiTurn) return;
+
+        if(player == MAXIMIZER) //Ai Player as maximizer
         {
-            if (aiTurn) return;
-
-            int r = PlacePiece(currentSelectionIndex, Board, MINIMIZER);
-            if (r == -1) return;
-            var go = Instantiate(minimizerPrefab, PieceSpawnLocations[currentSelectionIndex], minimizerPrefab.transform.rotation);
-            go.GetComponent<Piece>().SetCol(VisualBoard[r, currentSelectionIndex].transform.position);
-            placedPieces.AddFirst(go);
-            if (Win(MINIMIZER))
-            {
-                StartCoroutine(RobotDeath());
-                gameStatusText.text = "Player has won!";
-                return;
-            }
-
-            robotThinking= true;
+            robotThinking = true;
             StartCoroutine(AnimateRobotThinkingText());
 
             _t1 = new Thread(_PlaceAiPiece);
             if (!_t1.IsAlive) _t1.Start();
         }
-
-        if (Input.GetKeyDown(KeyCode.F10)) //ai hack
-        {
-
-            _t1 = new Thread(_PlaceAiPiece);
-            if (!_t1.IsAlive) _t1.Start();
-        }
-
-        if (Input.GetKeyDown(KeyCode.F11)) //player hack
+        else if(player == MINIMIZER)    //human player as minimizer
         {
             int r = PlacePiece(currentSelectionIndex, Board, MINIMIZER);
             if (r == -1) return;
-            var go = Instantiate(minimizerPrefab, PieceSpawnLocations[currentSelectionIndex], minimizerPrefab.transform.rotation);
+            var go = Instantiate(minimizerPrefab, PieceSpawnLocations[currentSelectionIndex].transform.position, minimizerPrefab.transform.rotation);
             go.GetComponent<Piece>().SetCol(VisualBoard[r, currentSelectionIndex].transform.position);
             placedPieces.AddFirst(go);
-            if (Win(MINIMIZER))
+            if (HasWon(MINIMIZER))
             {
+                isGameOver = true;
+                Destroy(Instantiate(explosionPrefab), 10f);
+                foreach(var pos in winLocations) tempHighlight.AddFirst(Instantiate(winningHighlightPrefab, new Vector3(pos.x , pos.y, pos.z), winningHighlightPrefab.transform.rotation));
                 StartCoroutine(RobotDeath());
                 gameStatusText.text = "Player has won!";
+                scoreText.text = "Player " + ++playerScore + " | " +  " Ai: " + aiScore;
+                return;
             }
-        }
-
-        if(Input.GetKeyDown(KeyCode.LeftArrow) || Input.GetKeyDown(KeyCode.A))
-        {
-            currentSelectionIndex--;
-            if (currentSelectionIndex < 0) currentSelectionIndex = 6;
-            visualArrow.transform.position = new Vector3(PieceSpawnLocations[currentSelectionIndex].x, PieceSpawnLocations[currentSelectionIndex].y + 1.5f, PieceSpawnLocations[currentSelectionIndex].z);
-        }
-
-        if (Input.GetKeyDown(KeyCode.RightArrow) || Input.GetKeyDown(KeyCode.D))
-        {
-            currentSelectionIndex++;
-            if (currentSelectionIndex >= 7) currentSelectionIndex = 0;
-            visualArrow.transform.position = new Vector3(PieceSpawnLocations[currentSelectionIndex].x, PieceSpawnLocations[currentSelectionIndex].y + 1.5f, PieceSpawnLocations[currentSelectionIndex].z);
         }
     }
 
-
-    private void _PlaceAiPiece()
+    private void _PlaceAiPiece() //Ai Thread - we don't want the game to lag while minimax is recursing
     {
         aiTurn = true;
         aiColIndex = FindBestMove(Board, MaxDepth);
@@ -169,21 +232,26 @@ public class Main : MonoBehaviour {
 
         threadFin = true;
         robotThinking = false;
-        Thread.CurrentThread.Abort();
-
+        Thread.CurrentThread.Abort(); //end current thread
     }
 
-    void ResetGame()
+    public void ResetGame()
     {
         for(int row = 0; row < 6; row++)
             for(int col = 0; col < 7; col++) Board[row, col] = 0;
 
         foreach (var go in placedPieces) Destroy(go);
+        foreach (var go in tempHighlight) Destroy(go);
         placedPieces.Clear();
+        winLocations.Clear();
 
         Robot.transform.position = roboOriginalLocation;
         robotAnimator.SetBool("dead", false);
         gameStatusText.text = "";
+        isGameOver = false;
+
+        selectionPanel.SetActive(true);
+        hasSelected = false;
     }
 
     IEnumerator RobotDeath()
@@ -213,13 +281,12 @@ public class Main : MonoBehaviour {
             }
             yield return new WaitForSeconds(0.4f);
         }
-       
         robotStatusText.text = "";
     }
 
     IEnumerator AnimateRobot()
     {
-        Vector3 GoalPos = PieceSpawnLocations[aiColIndex];
+        Vector3 GoalPos = PieceSpawnLocations[aiColIndex].transform.position;
         GoalPos.y = Robot.transform.position.y;
         Robot.transform.LookAt(new Vector3(GoalPos.x, Robot.transform.position.y, GoalPos.z));
         robotAnimator.SetBool("isRun", true);
@@ -234,26 +301,69 @@ public class Main : MonoBehaviour {
         robotAnimator.SetBool("attack", true);
 
         int rand = Random.Range(0, animationPrefabs.Length);
-        Destroy(Instantiate(animationPrefabs[rand], new Vector3(PieceSpawnLocations[aiColIndex].x, PieceSpawnLocations[aiColIndex].y+.5f, PieceSpawnLocations[aiColIndex].z), animationPrefabs[rand].transform.rotation), 2f);
+        Destroy(Instantiate(animationPrefabs[rand], new Vector3(PieceSpawnLocations[aiColIndex].transform.position.x, PieceSpawnLocations[aiColIndex].transform.position.y+.5f, PieceSpawnLocations[aiColIndex].transform.position.z), animationPrefabs[rand].transform.rotation), 2f);
 
         yield return new WaitForSeconds(0.75f);
-        Robot.transform.position = new Vector3(PieceSpawnLocations[aiColIndex].x, PieceSpawnLocations[aiColIndex].y+.5f, PieceSpawnLocations[aiColIndex].z);
+        Robot.transform.position = new Vector3(PieceSpawnLocations[aiColIndex].transform.position.x, PieceSpawnLocations[aiColIndex].transform.position.y+.5f, PieceSpawnLocations[aiColIndex].transform.position.z);
         robotAnimator.SetBool("isRun", false);
         robotAnimator.SetBool("attack", false);
 
-        var go = Instantiate(maximizerPrefab, PieceSpawnLocations[aiColIndex], maximizerPrefab.transform.rotation);
+        var go = Instantiate(maximizerPrefab, PieceSpawnLocations[aiColIndex].transform.position, maximizerPrefab.transform.rotation);
         go.GetComponent<Piece>().SetCol(VisualBoard[aiRow, aiColIndex].transform.position);
         placedPieces.AddFirst(go);
-        if (Win(MAXIMIZER))
+        if (HasWon(MAXIMIZER))
         {
-            Destroy(Instantiate(explosionPrefab), 5f);
+            isGameOver = true;
+            foreach (var pos in winLocations) tempHighlight.AddFirst(Instantiate(winningHighlightPrefab, new Vector3(pos.x, pos.y, pos.z), winningHighlightPrefab.transform.rotation));
+            Destroy(Instantiate(explosionPrefab), 10f);
             gameStatusText.text = "AI has won!";
+            scoreText.text = "Player " + playerScore + " | " + " Ai: " + ++aiScore;
         }
-
         aiTurn = false;
-
     }
 
+    IEnumerator PlayTillEnd(float delay)
+    {
+        while(!HasWon(MAXIMIZER) && !HasWon(MINIMIZER))
+        {
+            int colIndex = FindBestMove2(Board, MaxDepth);
+            int r = PlacePiece(colIndex, Board, MINIMIZER);
+            var go = Instantiate(minimizerPrefab, PieceSpawnLocations[colIndex].transform.position, minimizerPrefab.transform.rotation);
+            go.GetComponent<Piece>().SetCol(VisualBoard[r, colIndex].transform.position);
+            placedPieces.AddFirst(go);
+
+            if (HasWon(MINIMIZER))
+            {
+                isGameOver = true;
+                Destroy(Instantiate(explosionPrefab), 10f);
+                foreach (var pos in winLocations) tempHighlight.AddFirst(Instantiate(winningHighlightPrefab, new Vector3(pos.x, pos.y, pos.z), winningHighlightPrefab.transform.rotation));
+                StartCoroutine(RobotDeath());
+                gameStatusText.text = "Player has won!";
+                scoreText.text = "Player " + ++playerScore + " | " + " Ai: " + aiScore;
+                break;
+            }
+
+            yield return new WaitForSeconds(delay);
+
+            colIndex = FindBestMove(Board, MaxDepth);
+            r = PlacePiece(colIndex, Board, MAXIMIZER);
+            var go2 = Instantiate(maximizerPrefab, PieceSpawnLocations[colIndex].transform.position, maximizerPrefab.transform.rotation);
+            go2.GetComponent<Piece>().SetCol(VisualBoard[r, colIndex].transform.position);
+            placedPieces.AddFirst(go2);
+
+            if (HasWon(MAXIMIZER))
+            {
+                isGameOver = true;
+                Destroy(Instantiate(explosionPrefab), 10f);
+                foreach (var pos in winLocations) tempHighlight.AddFirst(Instantiate(winningHighlightPrefab, new Vector3(pos.x, pos.y, pos.z), winningHighlightPrefab.transform.rotation));
+                StartCoroutine(RobotDeath());
+                gameStatusText.text = "P2 has won!";
+                scoreText.text = "Player " + ++playerScore + " | " + " Ai: " + aiScore;
+                break;
+            }
+            yield return new WaitForSeconds(delay);
+        }
+    }
 
     int FindBestMove(int[,] board, int maxDepth)
     {
@@ -272,6 +382,30 @@ public class Main : MonoBehaviour {
                     bestMoveColumnIndex = col;
                     bestVal = moveVal;
                 }
+                print("col: " + col + " value: " + moveVal);
+            }
+        }
+        print("best move index: " + bestMoveColumnIndex);
+        return bestMoveColumnIndex;
+    }
+
+    int FindBestMove2(int[,] board, int maxDepth)
+    {
+        int bestVal = int.MaxValue;
+        int bestMoveColumnIndex = 0;
+        for (int col = 0; col < board.GetLength(1); col++)
+        {
+            if (Board[0, col] == 0) //check if board empty
+            {
+                //make the move
+                int[,] tempBoard = CopyBoard(board);
+                PlacePiece(col, tempBoard, MINIMIZER);
+                int moveVal = Minimax(tempBoard, maxDepth, 0, true, int.MinValue, int.MaxValue);
+                if (moveVal < bestVal)
+                {
+                    bestMoveColumnIndex = col;
+                    bestVal = moveVal;
+                }
             }
         }
         return bestMoveColumnIndex;
@@ -279,10 +413,10 @@ public class Main : MonoBehaviour {
 
     int Minimax(int[,] board, int maxDepth, int currentDepth, bool isMax, int alpha, int beta)
     {
-        int score = Evaluate(board) - (currentDepth);
-        if (score >= winScore-20000) return score + currentDepth;
-        if (score < loseScore+20000) return score - currentDepth; //minimizer won
-        if (!IsMovesLeft() || currentDepth >= maxDepth) return score; //might be a tie? 
+        int score = Evaluate(board) - currentDepth;
+        if (score >= winScore - 25000) return score - currentDepth;
+        if (score < loseScore + 25000) return score + currentDepth; //minimizer won
+        if (!IsMovesLeft() || currentDepth >= maxDepth) return score - currentDepth; //might be a tie? 
 
         if (isMax)
         {
@@ -290,23 +424,20 @@ public class Main : MonoBehaviour {
             //traverse all cells
             for (int col = 0; col < Board.GetLength(1); col++)
                 if (Board[0, col] == 0) //check if empty
-                {
-                    //make the move
-                    int[,] tempBoard = CopyBoard(board);
+                { 
+                    int[,] tempBoard = CopyBoard(board);  //make the move
                     PlacePiece(col, tempBoard, MAXIMIZER);
                     //call minimax recursively and choose the max value
                     int result = Minimax(tempBoard, maxDepth, currentDepth + 1, !isMax, alpha, beta);
                     if (result > best) best = result;
                     if(best > alpha) alpha = best;
-
-                    if(beta <= alpha) break;
+                    if (beta <= alpha) break;
                 }
             return best;
         }
         else// If this minimizer's move 
         {
             int best = int.MaxValue;
-
             //traverse all cells
             for (int col = 0; col < Board.GetLength(1); col++)
                 if (Board[0, col] == 0) //check if empty
@@ -322,7 +453,7 @@ public class Main : MonoBehaviour {
         }
     }
 
-    int[,] CopyBoard(int[,] board)
+    int[,] CopyBoard(int[,] board) //copys a board to another board, since passsing by value is hard
     {
         int[,] newArr = new int[6, 7];
         for (int row = 0; row < board.GetLength(0); row++)
@@ -357,57 +488,93 @@ public class Main : MonoBehaviour {
         return false;
     }
 
-    const int winScore = 1000000;
-    const int loseScore = -100000;
+
+    #region EvaluationFunction
+
+    readonly int[,] EvaluationTable =     {{3, 4, 5, 7, 5, 4, 3},
+                                          {4, 6, 8, 10, 8, 6, 4},
+                                          {5, 8, 11, 13, 11, 8, 5},
+                                          {5, 8, 11, 13, 11, 8, 5},
+                                          {4, 6, 8, 10, 8, 6, 4},
+                                          {3, 4, 5, 7, 5, 4, 3}};
+    /**
+     * A better evaluation function - prioritizes moves nearer to the middle of the board, as they have higher value.
+     *  
+     *  This function utilizes the values from evaluation table above, and the numbers within evaluation table basically tells the computer
+     *  the total number of possible 4 in a rows that are included in that spot. so The top left corner can only have 3 possible 4 in a rows (one horizontal, one vertical, one diagonal)
+     *  The more possible 4 in a rows, the higher the score.
+     *  
+     *  The value in each square is a herustic of how useful any given square is for ultimately winning a game. It's not a perfect solution; rather it makes many assumptions in order to save performance.
+     *  
+     *  The utility value is 138, since t he sum of all values in the table is 276 -> 276/2 = 138
+     *  It returns 0 if both players are equally likely to win,
+     *  a value smaller than 0 if minimizer is likely to win
+     *  a value greater than 0 if maximizer is likely to win.
+     * */
+    int EvaluateContent(int[,] board)
+    {
+        int utility = 138;
+        int sum = 0;
+        for (int i = 0; i < boardRows; i++)
+            for (int j = 0; j < boardColumns; j++)
+                if (board[i,j] == MAXIMIZER)
+                    sum += EvaluationTable[i,j];
+                else if (board[i,j] == MINIMIZER)
+                    sum -= EvaluationTable[i,j];
+        return utility + sum;
+    }
+
     int Evaluate(int[,] board) //Scoring function - There should be 69 possible ways to win on an empty board.
     {
-        //1 - look at rows first (24 ways to win)
-        for (int row = 0; row < board.GetLength(0); row++)
-            for (int col = 0; col < 4; col++) //only need to look at 4 ways to win per  
-                if ((board[row, col] == board[row, col + 1]) &&
-                   (board[row, col] == board[row, col + 2]) &&
-                   (board[row, col] == board[row, col + 3]))
-                    if (board[row, col] == MAXIMIZER) return winScore;
-                    else if (board[row, col] == MINIMIZER) return loseScore;
 
-        //2 - look at vertical (3 * 7 = 21 ways)
-        for (int row = 0; row < 3; row++)
-            for (int col = 0; col < board.GetLength(1); col++) //only need to look at 4 ways to win per  
-                if ((board[row, col] == board[row + 1, col]) &&
-                   (board[row, col] == board[row + 2, col]) &&
-                   (board[row, col] == board[row + 3, col]))
-                    if (board[row, col] == MAXIMIZER) return winScore;
-                    else if (board[row, col] == MINIMIZER) return loseScore;
+        // horizontalCheck 
+        for (int j = 0; j < boardColumns - 3; j++)
+            for (int i = 0; i < boardRows; i++)
+                if (board[i, j] == MAXIMIZER && board[i, j + 1] == MAXIMIZER && board[i, j + 2] == MAXIMIZER && board[i, j + 3] == MAXIMIZER) return winScore;
+                else if (board[i, j] == MINIMIZER && board[i, j + 1] == MINIMIZER && board[i, j + 2] == MINIMIZER && board[i, j + 3] == MINIMIZER) return loseScore;
 
-        //3 - look at diagonal right and down (12), right to up (12)
-        for (int col = 0; col < 4; col++)
-        {
-            for (int row = 0; row < 3; row++)
-                if ((board[row, col] == board[row + 1, col + 1]) &&
-                    (board[row, col] == board[row + 2, col + 2]) &&
-                    (board[row, col] == board[row + 3, col + 3]))
-                    if (board[row, col] == MAXIMIZER) return winScore;
-                    else if (board[row, col] == MINIMIZER) return loseScore;
+        // verticalCheck
+        for (int i = 0; i < boardRows - 3; i++)
+            for (int j = 0; j < boardColumns; j++)
+                if (board[i, j] == MAXIMIZER && board[i + 1, j] == MAXIMIZER && board[i + 2, j] == MAXIMIZER && board[i + 3, j] == MAXIMIZER) return winScore;
+                else if (board[i, j] == MINIMIZER && board[i + 1, j] == MINIMIZER && board[i + 2, j] == MINIMIZER && board[i + 3, j] == MINIMIZER) return loseScore;
 
-            for (int row = 3; row < 6; row++)
-                if ((board[row, col] == board[row - 1, col + 1]) &&
-                    (board[row, col] == board[row - 2, col + 2]) &&
-                    (board[row, col] == board[row - 3, col + 3]))
-                    if (board[row, col] == MAXIMIZER)
-                        return winScore;
-                    else if (board[row, col] == MINIMIZER)
-                        return loseScore;
+        // ascendingDiagonalCheck 
+        for (int i = 3; i < boardRows; i++)
+            for (int j = 0; j < boardColumns - 3; j++)
+                if (board[i, j] == MAXIMIZER && board[i - 1, j + 1] == MAXIMIZER && board[i - 2, j + 2] == MAXIMIZER && board[i - 3, j + 3] == MAXIMIZER) return winScore;
+                else if (board[i, j] == MINIMIZER && board[i - 1, j + 1] == MINIMIZER && board[i - 2, j + 2] == MINIMIZER && board[i - 3, j + 3] == MINIMIZER) return loseScore;
+
+        // descendingDiagonalCheck
+        for (int i = 3; i < boardRows; i++)
+            for (int j = 3; j < boardColumns; j++)
+                if (board[i, j] == MAXIMIZER && board[i - 1, j - 1] == MAXIMIZER && board[i - 2, j - 2] == MAXIMIZER && board[i - 3, j - 3] == MAXIMIZER) return winScore;
+                else if (board[i, j] == MINIMIZER && board[i - 1, j - 1] == MINIMIZER && board[i - 2, j - 2] == MINIMIZER && board[i - 3, j - 3] == MINIMIZER) return loseScore;
+
+        return EvaluateContent(board); //return GettingWinningMoveCount(board, MAXIMIZER) - GettingWinningMoveCount(board, MINIMIZER); this also works, but is less efficient
+    }
+
+    #endregion
+
+
+    void PrintBoard(int[,] board)
+    {
+        string output = "";
+        print("[");
+        for (int row = 0; row < board.GetLength(0); row++) { 
+            for (int col = 0; col < board.GetLength(1); col++)
+                output += board[row, col] + ", ";
+            
+            print(output);
+            output = "";
         }
-
-        //return 0;
-        return GettingWinningMoveCount(board, MAXIMIZER) - GettingWinningMoveCount(board, MINIMIZER);
+        print("]");
     }
 
 
-
-    const int threeInARowValue = 30;
+    const int threeInARowValue = 50;
     const int twoInARow = 10;
-
+    //Test evaluation function. it works but is not efficient, since it needs to be called twice to subtract the score from maximizer - minimizer.
     int GettingWinningMoveCount(int[,] board, int player)
     {
         //There should be 69 possible ways to win on an empty board.
@@ -434,24 +601,20 @@ public class Main : MonoBehaviour {
         for (int col = 0; col < 4; col++)
         {
             for (int row = 0; row < 3; row++)
-            {
                 if ((board[row, col] == 0 || board[row, col] == player) &&
                     (board[row + 1, col + 1] == 0 || board[row + 1, col + 1] == player) &&
                     (board[row + 2, col + 2] == 0 || board[row + 2, col + 2] == player) &&
                     (board[row + 3, col + 3] == 0 || board[row + 3, col + 3] == player))
                     winningMoves++;
-            }
 
             for (int row = 3; row < 6; row++)
-            {
+            
                 if ((board[row, col] == 0 || board[row, col] == player) &&
                     (board[row - 1, col + 1] == 0 || board[row - 1, col + 1] == player) &&
                     (board[row - 2, col + 2] == 0 || board[row - 2, col + 2] == player) &&
                     (board[row - 3, col + 3] == 0 || board[row - 3, col + 3] == player))
                     winningMoves++;
-            }
         }
-
 
         //Look at rows of XXX_ XX_X X_XX _XXX
         for (int row = 0; row < board.GetLength(0); row++)
@@ -498,108 +661,78 @@ public class Main : MonoBehaviour {
         //X 
         //X 
         for (int row = 5; row >= 3; row--)
-            for (int col = 0; col < board.GetLength(1); col++) //only need to look at 4 ways to win per  
+            for (int col = 0; col < board.GetLength(1); col++)   
                 if ((board[row, col] == player) &&
                    (board[row - 1, col] == player) &&
                    (board[row - 2, col] == 0) &&
                    (board[row - 3, col] == 0))
-                    winningMoves+=twoInARow;
-
-        /*
-        //diagonal of 3s
-        for (int col = 0; col < 4; col++)
-        {
-            for (int row = 0; row < 3; row++)
-            {
-                if ((board[row, col] == player) &&
-                    (board[row + 1, col + 1] == player) &&
-                    (board[row + 2, col + 2] == player) &&
-                    (board[row + 3, col + 3] == 0))
-                    winningMoves+=threeInARowValue;
+                    winningMoves += twoInARow;
                 else if ((board[row, col] == player) &&
-                    (board[row + 1, col + 1] == player) &&
-                    (board[row + 2, col + 2] == 0) &&
-                    (board[row + 3, col + 3] == player))
-                    winningMoves+=threeInARowValue;
-                else if ((board[row, col] == player) &&
-                    (board[row + 1, col + 1] == 0) &&
-                    (board[row + 2, col + 2] == player) &&
-                    (board[row + 3, col + 3] == player))
-                    winningMoves+=threeInARowValue;
-                else if ((board[row, col] == 0) &&
-                    (board[row + 1, col + 1] == player) &&
-                    (board[row + 2, col + 2] == player) &&
-                    (board[row + 3, col + 3] == player))
-                    winningMoves+=threeInARowValue;
-            }
-
-            //other diagonal
-            for (int row = 3; row < 6; row++)
-            {
-                if ((board[row, col] == player) &&
-                    (board[row - 1, col + 1] == player) &&
-                    (board[row - 2, col + 2] == player) &&
-                    (board[row - 3, col + 3] == 0))
-                    winningMoves+=threeInARowValue;
-                else if ((board[row, col] == player) &&
-                    (board[row - 1, col + 1] == player) &&
-                    (board[row - 2, col + 2] == 0) &&
-                    (board[row - 3, col + 3] == player))
-                    winningMoves+=threeInARowValue;
-                else if ((board[row, col] == player) &&
-                    (board[row - 1, col + 1] == 0) &&
-                    (board[row - 2, col + 2] == player) &&
-                    (board[row - 3, col + 3] == player))
-                    winningMoves+=threeInARowValue;
-                else if ((board[row, col] == 0) &&
-                    (board[row - 1, col + 1] == player) &&
-                    (board[row - 2, col + 2] == player) &&
-                    (board[row - 3, col + 3] == player))
-                    winningMoves+=threeInARowValue;
-            }
-           
-        }  */
-
+                          (board[row - 1, col] == player) &&
+                          (board[row - 2, col] == player) &&
+                          (board[row - 3, col] == 0))
+                    winningMoves += threeInARowValue;
 
         return winningMoves;
     }
 
-    bool Win(int player)
+    bool HasWon(int player)
     {
-        //1 - look at rows first (24 ways to win)
-        for (int row = 0; row < Board.GetLength(0); row++)
+        for (int row = 0; row < Board.GetLength(0); row++)  //1 - look at rows first (24 ways to win)
             for (int col = 0; col < 4; col++) //only need to look at 4 ways to win per  
                 if ((Board[row, col] != 0 && Board[row, col] == player) &&
                    (Board[row, col] == Board[row, col + 1]) &&
                    (Board[row, col] == Board[row, col + 2]) &&
                    (Board[row, col] == Board[row, col + 3]))
+                {
+                    winLocations.AddFirst(VisualBoard[row,col].transform.position);
+                    winLocations.AddFirst(VisualBoard[row, col+1].transform.position);
+                    winLocations.AddFirst(VisualBoard[row, col+2].transform.position);
+                    winLocations.AddFirst(VisualBoard[row, col+3].transform.position);
                     return true;
+                }
 
-        //2 - look at vertical (3 * 7 = 21 ways)
-        for (int row = 0; row < 3; row++)
+        for (int row = 0; row < 3; row++)  //2 - look at vertical (3 * 7 = 21 ways)
             for (int col = 0; col < Board.GetLength(1); col++) //only need to look at 4 ways to win per  
                 if ((Board[row, col] != 0 && Board[row, col] == player) &&
                    (Board[row, col] == Board[row + 1, col]) &&
                    (Board[row, col] == Board[row + 2, col]) &&
                    (Board[row, col] == Board[row + 3, col]))
+                {
+                    winLocations.AddFirst(VisualBoard[row, col].transform.position);
+                    winLocations.AddFirst(VisualBoard[row+1, col].transform.position);
+                    winLocations.AddFirst(VisualBoard[row+2, col].transform.position);
+                    winLocations.AddFirst(VisualBoard[row+3, col].transform.position);
                     return true;
+                }
 
-        //3 - look at diagonal right and down (12), right to up (12)
-        for (int col = 0; col < 4; col++)
+        for (int col = 0; col < 4; col++) //3 - look at diagonal right and down (12), right to up (12)
         {
             for (int row = 0; row < 3; row++)
                 if ((Board[row, col] != 0 && Board[row, col] == player) &&
                     (Board[row, col] == Board[row + 1, col + 1]) &&
                     (Board[row, col] == Board[row + 2, col + 2]) &&
                     (Board[row, col] == Board[row + 3, col + 3]))
+                {
+                    winLocations.AddFirst(VisualBoard[row, col].transform.position);
+                    winLocations.AddFirst(VisualBoard[row+1, col+1].transform.position);
+                    winLocations.AddFirst(VisualBoard[row+2, col+2].transform.position);
+                    winLocations.AddFirst(VisualBoard[row+3, col+3].transform.position);
                     return true;
+                }
 
             for (int row = 3; row < 6; row++)
                 if ((Board[row, col] != 0 && Board[row, col] == player) &&
                     (Board[row, col] == Board[row - 1, col + 1]) &&
                     (Board[row, col] == Board[row - 2, col + 2]) &&
                     (Board[row, col] == Board[row - 3, col + 3]))
+                {
+                    winLocations.AddFirst(VisualBoard[row, col].transform.position);
+                    winLocations.AddFirst(VisualBoard[row-1, col+1].transform.position);
+                    winLocations.AddFirst(VisualBoard[row-2, col+2].transform.position);
+                    winLocations.AddFirst(VisualBoard[row-3, col+3].transform.position);
                     return true;
+                }
         }
         return false;
     }

@@ -24,7 +24,7 @@ GameObject:
   - component: {fileID: 65176374348575364}
   m_Layer: 0
   m_Name: Connect_Prefab
-  m_TagString: Untagged
+  m_TagString: piece
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
@@ -57,7 +57,7 @@ MeshRenderer:
   m_ReflectionProbeUsage: 1
   m_RenderingLayerMask: 4294967295
   m_Materials:
-  - {fileID: 2100000, guid: ab33aaef4692ed2448a5282449101010, type: 2}
+  - {fileID: 2100000, guid: afb5a24f6e0d8994a8c2534a1fd21e22, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
