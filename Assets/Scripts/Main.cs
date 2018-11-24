@@ -338,7 +338,7 @@ public class Main : MonoBehaviour {
                 Destroy(Instantiate(explosionPrefab), 10f);
                 foreach (var pos in winLocations) tempHighlight.AddFirst(Instantiate(winningHighlightPrefab, new Vector3(pos.x, pos.y, pos.z), winningHighlightPrefab.transform.rotation));
                 StartCoroutine(RobotDeath());
-                gameStatusText.text = "Player has won!";
+                gameStatusText.text = "minimizer(1) has won!";
                 scoreText.text = "Player " + ++playerScore + " | " + " Ai: " + aiScore;
                 break;
             }
@@ -357,7 +357,7 @@ public class Main : MonoBehaviour {
                 Destroy(Instantiate(explosionPrefab), 10f);
                 foreach (var pos in winLocations) tempHighlight.AddFirst(Instantiate(winningHighlightPrefab, new Vector3(pos.x, pos.y, pos.z), winningHighlightPrefab.transform.rotation));
                 StartCoroutine(RobotDeath());
-                gameStatusText.text = "P2 has won!";
+                gameStatusText.text = "Maximizer(p2) has won!";
                 scoreText.text = "Player " + ++playerScore + " | " + " Ai: " + aiScore;
                 break;
             }
@@ -413,7 +413,7 @@ public class Main : MonoBehaviour {
 
     int Minimax(int[,] board, int maxDepth, int currentDepth, bool isMax, int alpha, int beta)
     {
-        int score = Evaluate(board) - currentDepth;
+        int score = Evaluate(board, isMax) - currentDepth;
         if (score >= winScore - 25000) return score - currentDepth;
         if (score < loseScore + 25000) return score + currentDepth; //minimizer won
         if (!IsMovesLeft() || currentDepth >= maxDepth) return score - currentDepth; //might be a tie? 
@@ -431,7 +431,8 @@ public class Main : MonoBehaviour {
                     int result = Minimax(tempBoard, maxDepth, currentDepth + 1, !isMax, alpha, beta);
                     if (result > best) best = result;
                     if(best > alpha) alpha = best;
-                    if (beta <= alpha) break;
+                    //if (beta <= alpha) break;
+                    if (alpha >= beta) break;
                 }
             return best;
         }
@@ -447,7 +448,7 @@ public class Main : MonoBehaviour {
                     int result = Minimax(tempBoard, maxDepth, currentDepth + 1, !isMax, alpha, beta); //call minimax recursively and choose the mininum value
                     if (result < best) best = result;
                     if(best < beta) beta = best;
-                    if(beta <= alpha) break;
+                    if (alpha >= beta) break;//if(beta <= alpha) break;
                 }
             return best;
         }
@@ -524,7 +525,7 @@ public class Main : MonoBehaviour {
         return utility + sum;
     }
 
-    int Evaluate(int[,] board) //Scoring function - There should be 69 possible ways to win on an empty board.
+    int Evaluate(int[,] board, bool isMax) //Scoring function - There should be 69 possible ways to win on an empty board.
     {
 
         // horizontalCheck 
@@ -551,7 +552,11 @@ public class Main : MonoBehaviour {
                 if (board[i, j] == MAXIMIZER && board[i - 1, j - 1] == MAXIMIZER && board[i - 2, j - 2] == MAXIMIZER && board[i - 3, j - 3] == MAXIMIZER) return winScore;
                 else if (board[i, j] == MINIMIZER && board[i - 1, j - 1] == MINIMIZER && board[i - 2, j - 2] == MINIMIZER && board[i - 3, j - 3] == MINIMIZER) return loseScore;
 
-        return EvaluateContent(board); //return GettingWinningMoveCount(board, MAXIMIZER) - GettingWinningMoveCount(board, MINIMIZER); this also works, but is less efficient
+        if(isMax)
+            return EvaluateContent(board);
+        else
+            return GettingWinningMoveCount(board, MAXIMIZER) - GettingWinningMoveCount(board, MINIMIZER);
+        //return EvaluateContent(board); //return GettingWinningMoveCount(board, MAXIMIZER) - GettingWinningMoveCount(board, MINIMIZER); this also works, but is less efficient
     }
 
     #endregion

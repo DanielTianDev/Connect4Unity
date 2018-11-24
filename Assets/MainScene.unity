@@ -1169,6 +1169,7 @@ MonoBehaviour:
   explosionPrefab: {fileID: 1590225418817344, guid: f1883d7dac069fe4a8268aa845f3dcef,
     type: 2}
   cursorPrefab: {fileID: 100006, guid: 0438351a6e6422d43a09930e9be00ee9, type: 2}
+  aiTurnDelay: 0.55
   MaxDepth: 6
 --- !u!4 &846908539
 Transform:
@@ -2385,9 +2386,9 @@ MonoBehaviour:
   m_HandleRect: {fileID: 2132915731}
   m_Direction: 0
   m_MinValue: 0
-  m_MaxValue: 10
+  m_MaxValue: 12
   m_WholeNumbers: 1
-  m_Value: 6
+  m_Value: 1
   m_OnValueChanged:
     m_PersistentCalls:
       m_Calls:
