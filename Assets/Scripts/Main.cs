@@ -112,11 +112,10 @@ public class Main : MonoBehaviour {
             PlacePiece(MINIMIZER);
             PlacePiece(MAXIMIZER); //ai turn
         }
-
+        if (Input.GetKeyDown(KeyCode.F1)) FindBestMove(Board, 1);//player debug
         if (Input.GetKeyDown(KeyCode.F10)) PlacePiece(MINIMIZER);//player debug
         if (Input.GetKeyDown(KeyCode.F11)) PlacePiece(MAXIMIZER);  //ai debug        
-
-        if(Input.GetKeyDown(KeyCode.F12)) StartCoroutine( PlayTillEnd(aiTurnDelay));
+        if (Input.GetKeyDown(KeyCode.F12)) StartCoroutine( PlayTillEnd(aiTurnDelay));
        
 
         if (Input.GetKeyDown(KeyCode.LeftArrow) || Input.GetKeyDown(KeyCode.A))
@@ -514,17 +513,14 @@ public class Main : MonoBehaviour {
      * */
     int EvaluateContent(int[,] board)
     {
-        int utility = 138;
-        int sum = 0;
+        int utility = 138, sum = 0;
         for (int i = 0; i < boardRows; i++)
             for (int j = 0; j < boardColumns; j++)
-                if (board[i,j] == MAXIMIZER)
-                    sum += EvaluationTable[i,j];
-                else if (board[i,j] == MINIMIZER)
-                    sum -= EvaluationTable[i,j];
+                if (board[i,j] == MAXIMIZER) sum += EvaluationTable[i,j];
+                else if (board[i,j] == MINIMIZER) sum -= EvaluationTable[i,j];
         return utility + sum;
     }
-
+    public  int oretoggle = 0;
     int Evaluate(int[,] board, bool isMax) //Scoring function - There should be 69 possible ways to win on an empty board.
     {
 
@@ -552,30 +548,26 @@ public class Main : MonoBehaviour {
                 if (board[i, j] == MAXIMIZER && board[i - 1, j - 1] == MAXIMIZER && board[i - 2, j - 2] == MAXIMIZER && board[i - 3, j - 3] == MAXIMIZER) return winScore;
                 else if (board[i, j] == MINIMIZER && board[i - 1, j - 1] == MINIMIZER && board[i - 2, j - 2] == MINIMIZER && board[i - 3, j - 3] == MINIMIZER) return loseScore;
 
-        if(isMax)
-            return EvaluateContent(board);
+
+        int player = MINIMIZER;
+        if (isMax) player = MAXIMIZER;
+        if(oretoggle==1)
+            return HerrmannEvaluation(board, player);
+        else return EvaluateContent(board);
+        /*
+        int player = MINIMIZER;
+        if (isMax) player = MAXIMIZER;
+        if (isMax)
+        {
+            return HerrmannEvaluation(board, player);
+        }
         else
-            return GettingWinningMoveCount(board, MAXIMIZER) - GettingWinningMoveCount(board, MINIMIZER);
+        {
+            return EvaluateContent(board);
+        }
+        */
         //return EvaluateContent(board); //return GettingWinningMoveCount(board, MAXIMIZER) - GettingWinningMoveCount(board, MINIMIZER); this also works, but is less efficient
     }
-
-    #endregion
-
-
-    void PrintBoard(int[,] board)
-    {
-        string output = "";
-        print("[");
-        for (int row = 0; row < board.GetLength(0); row++) { 
-            for (int col = 0; col < board.GetLength(1); col++)
-                output += board[row, col] + ", ";
-            
-            print(output);
-            output = "";
-        }
-        print("]");
-    }
-
 
     const int threeInARowValue = 50;
     const int twoInARow = 10;
@@ -613,7 +605,7 @@ public class Main : MonoBehaviour {
                     winningMoves++;
 
             for (int row = 3; row < 6; row++)
-            
+
                 if ((board[row, col] == 0 || board[row, col] == player) &&
                     (board[row - 1, col + 1] == 0 || board[row - 1, col + 1] == player) &&
                     (board[row - 2, col + 2] == 0 || board[row - 2, col + 2] == player) &&
@@ -628,37 +620,37 @@ public class Main : MonoBehaviour {
                    (board[row, col + 1] == player) &&
                    (board[row, col + 2] == player) &&
                    (board[row, col + 3] == 0))
-                    winningMoves+=threeInARowValue;
+                    winningMoves += threeInARowValue;
                 else if ((board[row, col] == player) &&
                    (board[row, col + 1] == player) &&
                    (board[row, col + 2] == 0) &&
                    (board[row, col + 3] == player))
-                    winningMoves+=threeInARowValue;
+                    winningMoves += threeInARowValue;
                 else if ((board[row, col] == player) &&
                    (board[row, col + 1] == 0) &&
                    (board[row, col + 2] == player) &&
                    (board[row, col + 3] == player))
-                    winningMoves+=threeInARowValue;
+                    winningMoves += threeInARowValue;
                 else if ((board[row, col] == 0) &&
                    (board[row, col + 1] == player) &&
                    (board[row, col + 2] == player) &&
                    (board[row, col + 3] == player))
-                    winningMoves+=threeInARowValue;
+                    winningMoves += threeInARowValue;
                 else if ((board[row, col] == player) && //look at 2 in a rows XX__ _XX_ __XX
                    (board[row, col + 1] == player) &&
                    (board[row, col + 2] == 0) &&
                    (board[row, col + 3] == 0))
-                    winningMoves+=twoInARow;
+                    winningMoves += twoInARow;
                 else if ((board[row, col] == 0) &&
                    (board[row, col + 1] == player) &&
                    (board[row, col + 2] == player) &&
                    (board[row, col + 3] == 0))
-                    winningMoves+=twoInARow;
+                    winningMoves += twoInARow;
                 else if ((board[row, col] == 0) &&
                    (board[row, col + 1] == 0) &&
                    (board[row, col + 2] == player) &&
                    (board[row, col + 3] == player))
-                    winningMoves+=twoInARow;
+                    winningMoves += twoInARow;
 
         //Look at columns
         //_
@@ -666,7 +658,7 @@ public class Main : MonoBehaviour {
         //X 
         //X 
         for (int row = 5; row >= 3; row--)
-            for (int col = 0; col < board.GetLength(1); col++)   
+            for (int col = 0; col < board.GetLength(1); col++)
                 if ((board[row, col] == player) &&
                    (board[row - 1, col] == player) &&
                    (board[row - 2, col] == 0) &&
@@ -679,6 +671,289 @@ public class Main : MonoBehaviour {
                     winningMoves += threeInARowValue;
 
         return winningMoves;
+    }
+
+
+    public readonly int DANGER_FACTOR = 150;
+    public readonly int GOOD_FACTOR = 25;
+    readonly int NumberToConnect = 4;
+    readonly float maxAllowablePerc = 0.75f;
+    int HerrmannEvaluation(int[,] board, int player)
+    {
+        int maximizerTokens=0, minimizerTokens=0, emptyCount = 0;
+        float danger = 0, goodness = 0;
+
+        //1 - look at rows first (24 ways to win)
+        for (int row = 0; row < board.GetLength(0); row++)
+            for (int col = 0; col < 4; col++) //only need to look at 4 ways to win per 
+            {
+                if (board[row, col] == MAXIMIZER)
+                    maximizerTokens++;
+                else if (board[row, col] == MINIMIZER)
+                    minimizerTokens++;
+                else if (board[row, col] == 0)
+                    emptyCount++;
+
+                if (board[row, col+1] == MAXIMIZER)
+                    maximizerTokens++;
+                else if (board[row, col+1] == MINIMIZER)
+                    minimizerTokens++;
+                else if (board[row, col + 1] == 0)
+                    emptyCount++;
+
+                if (board[row, col+2] == MAXIMIZER)
+                    maximizerTokens++;
+                else if (board[row, col+2] == MINIMIZER)
+                    minimizerTokens++;
+                else if (board[row, col + 2] == 0)
+                    emptyCount++;
+
+                if (board[row, col + 3] == MAXIMIZER)
+                    maximizerTokens++;
+                else if (board[row, col + 3] == MINIMIZER)
+                    minimizerTokens++;
+                else if (board[row, col + 3] == 0)
+                    emptyCount++;
+
+                if (player == MINIMIZER)
+                {
+                    if(minimizerTokens == 0 && maximizerTokens >= 2) danger += (maximizerTokens / NumberToConnect) * (DANGER_FACTOR / maxAllowablePerc); //danger value
+                   
+                    if(maximizerTokens == 0) goodness += minimizerTokens * GOOD_FACTOR; //goodness values
+
+                    if (minimizerTokens >= 1 && maximizerTokens >= 1)
+                        if (emptyCount == 0) goodness += 12;
+                        else goodness += 6;
+                    
+                }
+                else if (player == MAXIMIZER)
+                {
+                    if (maximizerTokens == 0 && minimizerTokens >= 2)
+                    {
+                        float percWon = minimizerTokens / NumberToConnect; //otherplayertoken / number to connect
+                        float dangerous = percWon * (DANGER_FACTOR / maxAllowablePerc);
+                    }
+
+                    if (minimizerTokens == 0) goodness += maximizerTokens * GOOD_FACTOR; //goodness values
+                    if (minimizerTokens >= 1 && maximizerTokens >= 1)
+                        if (emptyCount == 0) goodness += 12;
+                        else goodness += 6;
+                }
+
+                minimizerTokens = 0;
+                maximizerTokens = 0;
+                emptyCount = 0;
+
+            }
+
+                
+
+        //2 - look at vertical (3 * 7 = 21 ways)
+        for (int row = 0; row < 3; row++)
+            for (int col = 0; col < board.GetLength(1); col++) //only need to look at 4 ways to win per  
+            {
+                if (board[row, col] == MAXIMIZER)
+                    maximizerTokens++;
+                else if (board[row, col] == MINIMIZER)
+                    minimizerTokens++;
+                else if (board[row, col] == 0)
+                    emptyCount++;
+
+                if (board[row+1, col] == MAXIMIZER)
+                    maximizerTokens++;
+                else if (board[row+1, col] == MINIMIZER)
+                    minimizerTokens++;
+                else if (board[row+1, col] == 0)
+                    emptyCount++;
+
+                if (board[row+2, col] == MAXIMIZER)
+                    maximizerTokens++;
+                else if (board[row+2, col] == MINIMIZER)
+                    minimizerTokens++;
+                else if (board[row+2, col] == 0)
+                    emptyCount++;
+
+                if (board[row+3, col] == MAXIMIZER)
+                    maximizerTokens++;
+                else if (board[row+3, col] == MINIMIZER)
+                    minimizerTokens++;
+                else if (board[row+3, col] == 0)
+                    emptyCount++;
+
+                if (player == MINIMIZER)
+                {
+                    if (minimizerTokens == 0 && maximizerTokens >= 2) danger += (maximizerTokens / NumberToConnect) * (DANGER_FACTOR / maxAllowablePerc); //danger value
+
+                    if (maximizerTokens == 0) goodness += minimizerTokens * GOOD_FACTOR; //goodness values
+
+                    if (minimizerTokens >= 1 && maximizerTokens >= 1)
+                        if (emptyCount == 0) goodness += 12;
+                        else goodness += 6;
+                }
+                else if (player == MAXIMIZER)
+                {
+                    if (maximizerTokens == 0 && minimizerTokens >= 2)
+                    {
+                        float percWon = minimizerTokens / NumberToConnect; //otherplayertoken / number to connect
+                        float dangerous = percWon * (DANGER_FACTOR / maxAllowablePerc);
+                    }
+
+                    if (minimizerTokens == 0) goodness += maximizerTokens * GOOD_FACTOR; //goodness values
+                    if (minimizerTokens >= 1 && maximizerTokens >= 1)
+                        if (emptyCount == 0) goodness += 12;
+                        else goodness += 6;
+                }
+
+                minimizerTokens = 0;
+                maximizerTokens = 0;
+                emptyCount = 0;
+
+            }
+
+
+        //3 - look at diagonal right and down (12), right to up (12)
+        for (int col = 0; col < 4; col++)
+        {
+            for (int row = 0; row < 3; row++)
+            {
+                if (board[row, col] == MAXIMIZER)
+                    maximizerTokens++;
+                else if (board[row, col] == MINIMIZER)
+                    minimizerTokens++;
+                else if (board[row, col] == 0)
+                    emptyCount++;
+
+                if (board[row + 1, col+1] == MAXIMIZER)
+                    maximizerTokens++;
+                else if (board[row + 1, col + 1] == MINIMIZER)
+                    minimizerTokens++;
+                else if (board[row + 1, col + 1] == 0)
+                    emptyCount++;
+
+                if (board[row + 2, col + 2] == MAXIMIZER)
+                    maximizerTokens++;
+                else if (board[row + 2, col + 2] == MINIMIZER)
+                    minimizerTokens++;
+                else if (board[row + 2, col + 2] == 0)
+                    emptyCount++;
+
+                if (board[row + 3, col + 3] == MAXIMIZER)
+                    maximizerTokens++;
+                else if (board[row + 3, col + 3] == MINIMIZER)
+                    minimizerTokens++;
+                else if (board[row + 3, col + 3] == 0)
+                    emptyCount++;
+
+                if (player == MINIMIZER)
+                {
+                    if (minimizerTokens == 0 && maximizerTokens >= 2) danger += (maximizerTokens / NumberToConnect) * (DANGER_FACTOR / maxAllowablePerc); //danger value
+
+                    if (maximizerTokens == 0) goodness += minimizerTokens * GOOD_FACTOR; //goodness values
+
+                    if (minimizerTokens >= 1 && maximizerTokens >= 1)
+                        if (emptyCount == 0) goodness += 12;
+                        else goodness += 6;
+                }
+                else if (player == MAXIMIZER)
+                {
+                    if (maximizerTokens == 0 && minimizerTokens >= 2)
+                    {
+                        float percWon = minimizerTokens / NumberToConnect; //otherplayertoken / number to connect
+                        float dangerous = percWon * (DANGER_FACTOR / maxAllowablePerc);
+                    }
+
+                    if (minimizerTokens == 0) goodness += maximizerTokens * GOOD_FACTOR; //goodness values
+                    if (minimizerTokens >= 1 && maximizerTokens >= 1)
+                        if (emptyCount == 0) goodness += 12;
+                        else goodness += 6;
+                }
+
+                minimizerTokens = 0;
+                maximizerTokens = 0;
+                emptyCount = 0;
+            }
+
+            for (int row = 3; row < 6; row++)
+            {
+                if (board[row, col] == MAXIMIZER)
+                    maximizerTokens++;
+                else if (board[row, col] == MINIMIZER)
+                    minimizerTokens++;
+                else if (board[row, col] == 0)
+                    emptyCount++;
+
+                if (board[row - 1, col + 1] == MAXIMIZER)
+                    maximizerTokens++;
+                else if (board[row - 1, col + 1] == MINIMIZER)
+                    minimizerTokens++;
+                else if (board[row - 1, col + 1] == 0)
+                    emptyCount++;
+
+                if (board[row - 2, col + 2] == MAXIMIZER)
+                    maximizerTokens++;
+                else if (board[row - 2, col + 2] == MINIMIZER)
+                    minimizerTokens++;
+                else if (board[row - 2, col + 2] == 0)
+                    emptyCount++;
+
+                if (board[row - 3, col + 3] == MAXIMIZER)
+                    maximizerTokens++;
+                else if (board[row - 3, col + 3] == MINIMIZER)
+                    minimizerTokens++;
+                else if (board[row - 3, col + 3] == 0)
+                    emptyCount++;
+
+                if (player == MINIMIZER)
+                {
+                    if (minimizerTokens == 0 && maximizerTokens >= 2) danger += (maximizerTokens / NumberToConnect) * (DANGER_FACTOR / maxAllowablePerc); //danger value
+
+                    if (maximizerTokens == 0) goodness += minimizerTokens * GOOD_FACTOR; //goodness values
+
+                    if (minimizerTokens >= 1 && maximizerTokens >= 1)
+                        if (emptyCount == 0) goodness += 12;
+                        else goodness += 6;
+                }
+                else if (player == MAXIMIZER)
+                {
+                    if (maximizerTokens == 0 && minimizerTokens >= 2)
+                    {
+                        float percWon = minimizerTokens / NumberToConnect; //otherplayertoken / number to connect
+                        float dangerous = percWon * (DANGER_FACTOR / maxAllowablePerc);
+                    }
+
+                    if (minimizerTokens == 0) goodness += maximizerTokens * GOOD_FACTOR; //goodness values
+                    if (minimizerTokens >= 1 && maximizerTokens >= 1)
+                        if (emptyCount == 0) goodness += 12;
+                        else goodness += 6;
+                }
+
+                minimizerTokens = 0;
+                maximizerTokens = 0;
+                emptyCount = 0;
+            }
+
+        }
+
+        if (player == MAXIMIZER) return (int)(goodness - danger);
+        else return (int)(goodness - danger) * -1;
+
+    }
+
+    #endregion
+
+
+    void PrintBoard(int[,] board)
+    {
+        string output = "";
+        print("[");
+        for (int row = 0; row < board.GetLength(0); row++) { 
+            for (int col = 0; col < board.GetLength(1); col++)
+                output += board[row, col] + ", ";
+            
+            print(output);
+            output = "";
+        }
+        print("]");
     }
 
     bool HasWon(int player)

@@ -1169,8 +1169,9 @@ MonoBehaviour:
   explosionPrefab: {fileID: 1590225418817344, guid: f1883d7dac069fe4a8268aa845f3dcef,
     type: 2}
   cursorPrefab: {fileID: 100006, guid: 0438351a6e6422d43a09930e9be00ee9, type: 2}
-  aiTurnDelay: 0.55
+  aiTurnDelay: 0.01
   MaxDepth: 6
+  oretoggle: 1
 --- !u!4 &846908539
 Transform:
   m_ObjectHideFlags: 0
@@ -2388,7 +2389,7 @@ MonoBehaviour:
   m_MinValue: 0
   m_MaxValue: 12
   m_WholeNumbers: 1
-  m_Value: 1
+  m_Value: 5
   m_OnValueChanged:
     m_PersistentCalls:
       m_Calls:
