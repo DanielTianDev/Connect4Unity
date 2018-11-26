@@ -101,6 +101,23 @@ public class Main : MonoBehaviour {
 
         transpositionTable = LoadTranspositionTable();
 
+        var tempboard = CopyBoard(Board);
+
+        PlacePiece(0, tempboard, MAXIMIZER);
+        PlacePiece(1, tempboard, MAXIMIZER);
+        PlacePiece(2, tempboard, MAXIMIZER);
+
+        var tempboard2 = CopyBoard(Board);
+        PlacePiece(0, tempboard2, MAXIMIZER);
+        PlacePiece(1, tempboard2, MAXIMIZER);
+        PlacePiece(2, tempboard2, MAXIMIZER);
+
+
+        int lol = GetBoardHash(tempboard);
+        int lol2 = GetBoardHash(tempboard2);
+
+        print(lol);
+        print(lol2);
     }
 
 
@@ -114,16 +131,6 @@ public class Main : MonoBehaviour {
     private void Update()
     {
 
-        if (Input.GetKeyDown(KeyCode.P))
-        {
-            int i = 0;
-            foreach (DictionaryEntry e in transpositionTable)
-            {
-                if (i++ > 1000) break;
-                print(e.Key + " val: " + e.Value);
-            }
-            
-        }
         if (threadFin)
         {
             threadFin = false;
@@ -267,7 +274,7 @@ public class Main : MonoBehaviour {
                 StartCoroutine(RobotDeath());
                 gameStatusText.text = "Player has won!";
                 scoreText.text = "Player " + ++playerScore + " | " +  " Ai: " + aiScore;
-                SaveTranspositionTable();
+               
                 return;
             }
         }
@@ -367,7 +374,7 @@ public class Main : MonoBehaviour {
             Destroy(Instantiate(explosionPrefab), 10f);
             gameStatusText.text = "AI has won!";
             scoreText.text = "Player " + playerScore + " | " + " Ai: " + ++aiScore;
-            SaveTranspositionTable();
+            //SaveTranspositionTable();
         }
         aiTurn = false;
     }
@@ -432,11 +439,62 @@ public class Main : MonoBehaviour {
         int bestMoveColumnIndex = 0;
         iterativeBegun = true;
 
-        int maximumDepth = 0;
+        int maximumDepth = MaxDepth+2;
         
-        while(currentTimer < MaxIterativeTimeout)   //iterative deepening
+        
+        int val = 0;
+        for (int col = 3; val <= 3; val++) //check the middle row first, then one to the left, one to the right. This is more efficient as more valuable moves are made nearer to the center
         {
+            if (val == 0)
+            {
+                if (Board[0, col] == 0) //check if board empty
+                {
+                    //make the move
+                    int[,] tempBoard = CopyBoard(board);
+                    PlacePiece(col, tempBoard, MAXIMIZER);
+                    int moveVal = Minimax(tempBoard, 0, maximumDepth, false, int.MinValue, int.MaxValue);
+                    if (moveVal > bestVal)
+                    {
+                        bestMoveColumnIndex = col;
+                        bestVal = moveVal;
+                    }
+                    //print("col: " + (col) + " value: " + moveVal);
+                }
+            }
+            else
+            {
+                if (Board[0, col - val] == 0) //check left
+                {
+                    int[,] tempBoard = CopyBoard(board);
+                    PlacePiece(col - val, tempBoard, MAXIMIZER);
+                    int moveVal = Minimax(tempBoard, 0, maximumDepth, false, int.MinValue, int.MaxValue);
+                    if (moveVal > bestVal)
+                    {
+                        bestMoveColumnIndex = col - val;
+                        bestVal = moveVal;
+                    }
+                    //print("col: " + (col - val) + " value: " + moveVal);
+                }
 
+                if (Board[0, col + val] == 0) //check right
+                {
+                    int[,] tempBoard = CopyBoard(board);
+                    PlacePiece(col + val, tempBoard, MAXIMIZER);
+                    int moveVal = Minimax(tempBoard, 0, maximumDepth, false, int.MinValue, int.MaxValue);
+                    if (moveVal > bestVal)
+                    {
+                        bestMoveColumnIndex = col + val;
+                        bestVal = moveVal;
+                    }
+                    //print("col: " + (col + val) + " value: " + moveVal);
+                }
+            }
+        }
+        
+        /*
+        while(true)   //iterative deepening
+        {
+            
             int val = 0;
             for (int col = 3; val <= 3; val++) //check the middle row first, then one to the left, one to the right. This is more efficient as more valuable moves are made nearer to the center
             {
@@ -453,7 +511,7 @@ public class Main : MonoBehaviour {
                             bestMoveColumnIndex = col;
                             bestVal = moveVal;
                         }
-                       // print("col: " + (col) + " value: " + moveVal);
+                        //print("col: " + (col) + " value: " + moveVal);
                     }
                 }
                 else
@@ -485,11 +543,69 @@ public class Main : MonoBehaviour {
                     }
                 }
             }
+
+            if (currentTimer >= MaxIterativeTimeout)
+            {
+                if (maximumDepth % 2 == 0)
+                {
+                    maximumDepth++;
+                    val = 0;
+                    for (int col = 3; val <= 3; val++) //check the middle row first, then one to the left, one to the right. This is more efficient as more valuable moves are made nearer to the center
+                    {
+                        if (val == 0)
+                        {
+                            if (Board[0, col] == 0) //check if board empty
+                            {
+                                //make the move
+                                int[,] tempBoard = CopyBoard(board);
+                                PlacePiece(col, tempBoard, MAXIMIZER);
+                                int moveVal = Minimax(tempBoard, 0, maximumDepth, false, int.MinValue, int.MaxValue);
+                                if (moveVal > bestVal)
+                                {
+                                    bestMoveColumnIndex = col;
+                                    bestVal = moveVal;
+                                }
+                                //print("col: " + (col) + " value: " + moveVal);
+                            }
+                        }
+                        else
+                        {
+                            if (Board[0, col - val] == 0) //check left
+                            {
+                                int[,] tempBoard = CopyBoard(board);
+                                PlacePiece(col - val, tempBoard, MAXIMIZER);
+                                int moveVal = Minimax(tempBoard, 0, maximumDepth, false, int.MinValue, int.MaxValue);
+                                if (moveVal > bestVal)
+                                {
+                                    bestMoveColumnIndex = col - val;
+                                    bestVal = moveVal;
+                                }
+                                //print("col: " + (col - val) + " value: " + moveVal);
+                            }
+
+                            if (Board[0, col + val] == 0) //check right
+                            {
+                                int[,] tempBoard = CopyBoard(board);
+                                PlacePiece(col + val, tempBoard, MAXIMIZER);
+                                int moveVal = Minimax(tempBoard, 0, maximumDepth, false, int.MinValue, int.MaxValue);
+                                if (moveVal > bestVal)
+                                {
+                                    bestMoveColumnIndex = col + val;
+                                    bestVal = moveVal;
+                                }
+                                //print("col: " + (col + val) + " value: " + moveVal);
+                            }
+                        }
+                    }
+                }
+                break;
+            }
+
             maximumDepth++;
-        }
+        }*/
 
         print("best move index: " + bestMoveColumnIndex);
-        print("evaluation counter: " + evalCount);
+        print("maximumDepth: " + maximumDepth);
         iterativeBegun = false;
         currentTimer = 0;
         return bestMoveColumnIndex;
@@ -500,7 +616,7 @@ public class Main : MonoBehaviour {
     {
        
         if (testmaximumTraversed < currentDepth) testmaximumTraversed = currentDepth;
-
+        /*
         int hash = GetBoardHash(board), score;
         if (!transpositionTable.Contains(hash))
         {
@@ -509,8 +625,8 @@ public class Main : MonoBehaviour {
         }
         else score = (int)transpositionTable[hash];
         score -= currentDepth;
-
-        //int score = Evaluate(board, isMax) - currentDepth; 
+        */
+        int score = Evaluate(board, isMax) - currentDepth; 
         if (score >= winScore - 100000) return score - currentDepth;
         if (score < loseScore + 100000) return score + currentDepth; //minimizer won
         if (!IsMovesLeft() || currentDepth >= maxDepth) return score - currentDepth; //currentDepth >= maxDepth
@@ -711,11 +827,11 @@ public class Main : MonoBehaviour {
                 if (board[i, j] == MAXIMIZER && board[i - 1, j - 1] == MAXIMIZER && board[i - 2, j - 2] == MAXIMIZER && board[i - 3, j - 3] == MAXIMIZER) return winScore;
                 else if (board[i, j] == MINIMIZER && board[i - 1, j - 1] == MINIMIZER && board[i - 2, j - 2] == MINIMIZER && board[i - 3, j - 3] == MINIMIZER) return loseScore;
 
-        return EvaluateContent(board);
-        /*
+        //return EvaluateContent(board);        
+        
         int player = MINIMIZER;
         if (isMax) player = MAXIMIZER;
-        return HerrmannEvaluation(board, player);*/
+        return HerrmannEvaluation(board, player);
         //return GettingWinningMoveCount(board, MAXIMIZER) - GettingWinningMoveCount(board, MINIMIZER); //return EvaluateContent(board);  
     }
 
@@ -1235,8 +1351,11 @@ public class Main : MonoBehaviour {
                     bestMoveColumnIndex = col;
                     bestVal = moveVal;
                 }
+
+                //print("moveVal: " + moveVal);
             }
         }
+        //print("Best val: " + bestVal);
         return bestMoveColumnIndex;
     }
 

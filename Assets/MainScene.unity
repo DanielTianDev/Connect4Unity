@@ -38,7 +38,7 @@ RenderSettings:
   m_ReflectionIntensity: 1
   m_CustomReflection: {fileID: 0}
   m_Sun: {fileID: 0}
-  m_IndirectSpecularColor: {r: 0.44657898, g: 0.4964133, b: 0.5748178, a: 1}
+  m_IndirectSpecularColor: {r: 0.44657844, g: 0.49641222, b: 0.57481694, a: 1}
   m_UseRadianceAmbientProbe: 0
 --- !u!157 &3
 LightmapSettings:
@@ -1246,8 +1246,8 @@ MonoBehaviour:
     type: 2}
   cursorPrefab: {fileID: 100006, guid: 0438351a6e6422d43a09930e9be00ee9, type: 2}
   aiTurnDelay: 1
-  MaxDepth: 5
-  MaxIterativeTimeout: 2
+  MaxDepth: 7
+  MaxIterativeTimeout: 1
   currentTimer: 0
   testmaximumTraversed: 0
   evalCount: 0
