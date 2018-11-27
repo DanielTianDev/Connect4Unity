@@ -2,92 +2,101 @@
 using System.Collections.Generic;
 using UnityEngine;
 using System.Threading;
+using System.Threading.Tasks;
 using UnityEngine.UI;
 using System.IO;
 using System;
 //https://www.quora.com/How-do-I-make-Minimax-algorithm-incredibly-fast-How-do-I-deepen-the-game-search-tree
 /**
- * @Author: Daniel Tian
- * @Date: November 22, 2018
+ * @Author: Daniel Tian (A00736794)
+ * @Date: November 26, 2018
  * 
- * Connect 4 Ai assignment 5 using minimax algorithm, and an evaluation function based on the Gaussian normal distributrion of the table, giving higher scores
- * to positions nearer to the center of the board. There is improvements to be made, but it works alright as giving bias to the center positions will beat most humans
- * who aren't experts or too familiar with the game, provided we can look ahead far enough.
- * 
+ * Connect 4 Ai assignment 5 using minimax algorithm, alpha beta pruning, transposition tables of previously computed values from static evaluation, multi threading,
+ * as well as loading in precomputed transposition table from a file to save computation time. 
+ * This program can play with a depth of 9 within a reasonable amount of time (10 seconds average for the first 5-8 moves, and then gets much faster)
  * 
  * */
 public class Main : MonoBehaviour {
 
+    #region Declarations
 
-    GameObject[,] VisualBoard = new GameObject[6,7];
-    GameObject[] PieceSpawnLocations = new GameObject[7];
-
+    //Visual prefabs
     public GameObject connect4Prefab;
     public GameObject minimizerPrefab, maximizerPrefab;
-    public GameObject Robot;
-    public Animator robotAnimator;
-    public float robotSpeed = 3.0f;
-
     public GameObject[] animationPrefabs;
     public GameObject winningHighlightPrefab;
     public GameObject explosionPrefab;
     public GameObject cursorPrefab;
 
-    public float aiTurnDelay = 0.01f;
-    GameObject cursorPrefabPointer;
+    //visual robot speed and max depth can be set here.
+    public int MAX_DEPTH = 5;
+    public float robotSpeed = 3.5f;
+    public float currentTimer = 0f;
+    public int evalCount = 0;
+    public int hashHitCount = 0;
 
-    GameObject parentTransform;
-    GameObject visualArrow;
-    int currentSelectionIndex = 0;
-
+    //Board and game state data
     int[,] Board = new int[6, 7];
     readonly int MAXIMIZER = 1;
     readonly int MINIMIZER = 2;
-    public int MaxDepth = 5;
-    public float MaxIterativeTimeout = 2.0f;
-
-    public float currentTimer = 0f;
-
     readonly int winScore = 10000000;
     readonly int loseScore = -10000000;
     readonly int boardRows = 6;
     readonly int boardColumns = 7;
 
+    //Game state data
+    int currentSelectionIndex = 0;
+    int maximumDepthTravelled = 0;
+    int aiColIndex = 0;
+    int aiRow = 0;
+    int playerScore, aiScore;
+
+    //Game state booleans for visual effects and turn end
     bool aiTurn = false;
-
-    Thread _t1;
-    int aiColIndex;
-    int aiRow;
     bool threadFin;
-    LinkedList<GameObject> placedPieces = new LinkedList<GameObject>();
-
-    Vector3 roboOriginalLocation;
-
-    TextMesh robotStatusText;
     bool robotThinking;
     bool isGameOver;
+    bool hasSelected;
+    bool incrementTimer;
+    readonly object minimaxLock = new object(); //used for multi threading
 
-    Text gameStatusText, scoreText, info1Text;
-    LinkedList<Vector3> winLocations = new LinkedList<Vector3>();
-    LinkedList<GameObject> tempHighlight = new LinkedList<GameObject>();
-
+    //Visual element references
+    GameObject[,] VisualBoard = new GameObject[6,7];
+    GameObject[] PieceSpawnLocations = new GameObject[7];
+    GameObject Robot;
+    GameObject parentTransform;
+    GameObject visualArrow;
+    GameObject cursorPrefabPointer;
     GameObject selectionPanel;
 
-    int playerScore, aiScore;
-    bool hasSelected;
+    //Visual element references
+    LinkedList<Vector3> winLocations = new LinkedList<Vector3>();
+    LinkedList<GameObject> placedPieces = new LinkedList<GameObject>();
+    LinkedList<GameObject> tempHighlight = new LinkedList<GameObject>();
 
+    //Visual element references and controllers
+    Animator robotAnimator;
+    Text gameStatusText, scoreText, info1Text;
+    TextMesh robotStatusText;
+    Vector3 roboOriginalLocation;
+
+    //Transposition Table
     Hashtable transpositionTable = new Hashtable();
+
+    //Ai turn thread - computes minimax in a thread as to not freeze unity
+    Thread _AiTurnThread, _MiniMaxThread;
+
+    #endregion
 
     void Start() {
         parentTransform = GameObject.Find("Board");
-        SpawnBoardLocations();
+        SpawnVisualBoard();  //Spawns connect 4 board into game world
 
         visualArrow = GameObject.Find("ArrowContainer");
         visualArrow.transform.position = new Vector3(PieceSpawnLocations[currentSelectionIndex].transform.position.x, PieceSpawnLocations[currentSelectionIndex].transform.position.y + 1.5f, PieceSpawnLocations[currentSelectionIndex].transform.position.z);
 
-        Robot = GameObject.Find("Robot");
+        Robot = GameObject.Find("Robot"); //spawn robot
         robotAnimator = Robot.GetComponent<Animator>();
-        //spawn robot
         Robot.transform.position = new Vector3(PieceSpawnLocations[currentSelectionIndex].transform.position.x, PieceSpawnLocations[currentSelectionIndex].transform.position.y+0.5f, PieceSpawnLocations[currentSelectionIndex].transform.position.z);
         roboOriginalLocation = Robot.transform.position;
 
@@ -96,54 +105,36 @@ public class Main : MonoBehaviour {
         scoreText = GameObject.Find("ScoreText").GetComponent<Text>();
         info1Text = GameObject.Find("Info1Text").GetComponent<Text>();
         selectionPanel = GameObject.Find("Panel");
-
         cursorPrefabPointer = Instantiate(cursorPrefab, cursorPrefab.transform.position, cursorPrefab.transform.rotation);
 
-        transpositionTable = LoadTranspositionTable();
-
-        var tempboard = CopyBoard(Board);
-
-        PlacePiece(0, tempboard, MAXIMIZER);
-        PlacePiece(1, tempboard, MAXIMIZER);
-        PlacePiece(2, tempboard, MAXIMIZER);
-
-        var tempboard2 = CopyBoard(Board);
-        PlacePiece(0, tempboard2, MAXIMIZER);
-        PlacePiece(1, tempboard2, MAXIMIZER);
-        PlacePiece(2, tempboard2, MAXIMIZER);
-
-
-        int lol = GetBoardHash(tempboard);
-        int lol2 = GetBoardHash(tempboard2);
-
-        print(lol);
-        print(lol2);
+        transpositionTable = LoadTranspositionTable();  //Loads in transposition table from file
     }
 
+    #region UnityFunctions
 
-
-    bool iterativeBegun;
     private void FixedUpdate()
     {
-        if(iterativeBegun) currentTimer += Time.fixedDeltaTime;
+        if (incrementTimer) currentTimer += Time.fixedDeltaTime;
     }
 
     private void Update()
     {
+        if (Input.GetKeyDown(KeyCode.F1)) SaveTranspositionTable(); //saves the hash table of values and board states
 
-        if (threadFin)
+        if (threadFin) //Ai thread finished
         {
             threadFin = false;
             StartCoroutine(AnimateRobot());
             robotStatusText.text = "";
-            info1Text.text = "Moves evaluated: " + evalCount + " max depth traversed: " + testmaximumTraversed;
-            testmaximumTraversed = 0;
+            info1Text.text = "Total Moves evaluated: " + (evalCount + hashHitCount) + "\n\nStatic Evaluation Calls: " + evalCount + "\n\nHashtable hits: " + hashHitCount +
+                "\n\nMax depth traversed: " + maximumDepthTravelled + "\n\nTime taken: " + currentTimer + " seconds" + "\n\n\n\n\nTotal Hashtable Entries: " + transpositionTable.Count;
+            maximumDepthTravelled = 0;
             evalCount = 0;
+            hashHitCount = 0;
+            currentTimer = 0;
         }
 
         if (Input.GetKeyDown(KeyCode.R)) ResetGame();
-
-
         if (isGameOver || !hasSelected) return;
 
         if (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.Space) || Input.GetMouseButtonDown(1))
@@ -151,34 +142,10 @@ public class Main : MonoBehaviour {
             ExecuteTurn(MINIMIZER);
             ExecuteTurn(MAXIMIZER); //ai turn
         }
-        if (Input.GetKeyDown(KeyCode.F1)) SaveTranspositionTable();
 
-        if (Input.GetKeyDown(KeyCode.F10))
-        {
-            //old eval gaussian function
-            int colIndex = FindBestMove2(Board, MaxDepth);
-            int r = PlacePiece(colIndex, Board, MINIMIZER);
-            if (r != -1)
-            {
-                var go = Instantiate(minimizerPrefab, PieceSpawnLocations[colIndex].transform.position, minimizerPrefab.transform.rotation);
-                go.GetComponent<Piece>().SetCol(VisualBoard[r, colIndex].transform.position);
-                placedPieces.AddFirst(go);
-
-                if (HasWon(MINIMIZER))
-                {
-                    isGameOver = true;
-                    Destroy(Instantiate(explosionPrefab), 10f);
-                    foreach (var pos in winLocations) tempHighlight.AddFirst(Instantiate(winningHighlightPrefab, new Vector3(pos.x, pos.y, pos.z), winningHighlightPrefab.transform.rotation));
-                    StartCoroutine(RobotDeath());
-                    gameStatusText.text = "minimizer(1) has won!";
-                    scoreText.text = "Player " + ++playerScore + " | " + " Ai: " + aiScore;
-                }
-            }
-            //ExecuteTurn(MINIMIZER);//player debug
-        }
+        if (Input.GetKeyDown(KeyCode.F10)) ExecuteTurn(MINIMIZER);//player debug
+ 
         if (Input.GetKeyDown(KeyCode.F11)) ExecuteTurn(MAXIMIZER);  //ai debug        
-        if (Input.GetKeyDown(KeyCode.F12)) StartCoroutine( PlayTillEnd(aiTurnDelay));
-       
 
         if (Input.GetKeyDown(KeyCode.LeftArrow) || Input.GetKeyDown(KeyCode.A))
         {
@@ -186,18 +153,16 @@ public class Main : MonoBehaviour {
             if (currentSelectionIndex < 0) currentSelectionIndex = 6;
             visualArrow.transform.position = new Vector3(PieceSpawnLocations[currentSelectionIndex].transform.position.x, PieceSpawnLocations[currentSelectionIndex].transform.position.y + 1.5f, PieceSpawnLocations[currentSelectionIndex].transform.position.z-0.5f);
         }
-
         if (Input.GetKeyDown(KeyCode.RightArrow) || Input.GetKeyDown(KeyCode.D))
         {
             currentSelectionIndex++;
             if (currentSelectionIndex >= 7) currentSelectionIndex = 0;
             visualArrow.transform.position = new Vector3(PieceSpawnLocations[currentSelectionIndex].transform.position.x, PieceSpawnLocations[currentSelectionIndex].transform.position.y + 1.5f, PieceSpawnLocations[currentSelectionIndex].transform.position.z - 0.5f);
         }
-
-        RayCastSelect();
+        UpdateVisualCursor();
     }
 
-    void RayCastSelect()
+    void UpdateVisualCursor()
     {
         RaycastHit hit;
         Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
@@ -212,18 +177,17 @@ public class Main : MonoBehaviour {
                 visualArrow.transform.position = new Vector3(PieceSpawnLocations[currentSelectionIndex].transform.position.x, PieceSpawnLocations[currentSelectionIndex].transform.position.y + 1.5f, PieceSpawnLocations[currentSelectionIndex].transform.position.z - 0.5f);
             }
 
-            cursorPrefabPointer.transform.position = new Vector3(objectHit.transform.position.x, objectHit.transform.position.y, objectHit.transform.position.z+0.5f);
+            cursorPrefabPointer.transform.position = new Vector3(objectHit.transform.position.x, objectHit.transform.position.y+0.1f, objectHit.transform.position.z+0.5f);
         }
     }
 
     public void ChangeDifficulty()
     {
-        int val = (int)GameObject.Find("DifficultySlider").GetComponent<Slider>().value;
-        MaxIterativeTimeout = (float)val;
-        GameObject.Find("DifficultyText").GetComponent<Text>().text = "Difficulty: " + MaxIterativeTimeout;
+        MAX_DEPTH = (int)GameObject.Find("DifficultySlider").GetComponent<Slider>().value;
+        GameObject.Find("DifficultyText").GetComponent<Text>().text = "Difficulty(depth): " + MAX_DEPTH;
     }
 
-    void SpawnBoardLocations()
+    void SpawnVisualBoard()
     {
         for(int row = 0; row < 6; row++)
         {
@@ -235,89 +199,37 @@ public class Main : MonoBehaviour {
                 VisualBoard[row, col] = go;
             }
         }
-
         for(int col = 0; col < 7; col++) PieceSpawnLocations[col] = VisualBoard[0, col];
     }
-
-    public void SelectWhoGoesFirst(int selection)
-    {
-        if(selection == 0) ExecuteTurn(MAXIMIZER); //ai turn
-
-        selectionPanel.SetActive(false);
-        hasSelected = true;
-    }
-
-    void ExecuteTurn(int player)
-    {
-        if (aiTurn) return;
-
-        if(player == MAXIMIZER) //Ai Player as maximizer
-        {
-            robotThinking = true;
-            StartCoroutine(AnimateRobotThinkingText());
-
-            _t1 = new Thread(_PlaceAiPiece);
-            if (!_t1.IsAlive) _t1.Start();
-        }
-        else if(player == MINIMIZER)    //human player as minimizer
-        {
-            int r = PlacePiece(currentSelectionIndex, Board, MINIMIZER);
-            if (r == -1) return;
-            var go = Instantiate(minimizerPrefab, PieceSpawnLocations[currentSelectionIndex].transform.position, minimizerPrefab.transform.rotation);
-            go.GetComponent<Piece>().SetCol(VisualBoard[r, currentSelectionIndex].transform.position);
-            placedPieces.AddFirst(go);
-            if (HasWon(MINIMIZER))
-            {
-                isGameOver = true;
-                Destroy(Instantiate(explosionPrefab), 10f);
-                foreach(var pos in winLocations) tempHighlight.AddFirst(Instantiate(winningHighlightPrefab, new Vector3(pos.x , pos.y, pos.z), winningHighlightPrefab.transform.rotation));
-                StartCoroutine(RobotDeath());
-                gameStatusText.text = "Player has won!";
-                scoreText.text = "Player " + ++playerScore + " | " +  " Ai: " + aiScore;
-               
-                return;
-            }
-        }
-    }
-
-    private void _PlaceAiPiece() //Ai Thread - we don't want the game to lag while minimax is recursing
-    {
-        aiTurn = true;
-        aiColIndex = FindBestMove(Board);
-        aiRow = PlacePiece(aiColIndex, Board, MAXIMIZER);
-
-        threadFin = true;
-        robotThinking = false;
-        Thread.CurrentThread.Abort(); //end current thread
-    }
-
-    public void ResetGame()
+    
+    public void ResetGame() //Resets the game
     {
         for(int row = 0; row < 6; row++)
             for(int col = 0; col < 7; col++) Board[row, col] = 0;
 
         foreach (var go in placedPieces) Destroy(go);
         foreach (var go in tempHighlight) Destroy(go);
+
         placedPieces.Clear();
         winLocations.Clear();
 
         Robot.transform.position = roboOriginalLocation;
+        info1Text.text = "";
         robotAnimator.SetBool("dead", false);
         gameStatusText.text = "";
         isGameOver = false;
-
         selectionPanel.SetActive(true);
         hasSelected = false;
     }
 
-    IEnumerator RobotDeath()
+    IEnumerator RobotDeath() //animates robot death
     {
         robotAnimator.SetBool("dead", true);
         yield return new WaitForSeconds(0.65f);
         Robot.transform.position = new Vector3(roboOriginalLocation.x, roboOriginalLocation.y-0.65f, roboOriginalLocation.z);
     }
 
-    IEnumerator AnimateRobotThinkingText()
+    IEnumerator AnimateRobotThinkingText() //animates ai thinking
     {
         int temp = 0;
         robotStatusText.transform.position = new Vector3(Robot.transform.position.x+0.5f, Robot.transform.position.y + 2.25f, Robot.transform.position.z);
@@ -340,7 +252,7 @@ public class Main : MonoBehaviour {
         robotStatusText.text = "";
     }
 
-    IEnumerator AnimateRobot()
+    IEnumerator AnimateRobot() //animates ai placing a piece down at a specific column
     {
         Vector3 GoalPos = PieceSpawnLocations[aiColIndex].transform.position;
         GoalPos.y = Robot.transform.position.y;
@@ -349,22 +261,22 @@ public class Main : MonoBehaviour {
 
         while (Vector3.Distance(Robot.transform.position, GoalPos) >= 0.25)
         {
-            Robot.transform.position = Vector3.MoveTowards(Robot.transform.position, GoalPos, robotSpeed * Time.deltaTime);
-
+            Robot.transform.position = Vector3.MoveTowards(Robot.transform.position, GoalPos, robotSpeed * Time.fixedDeltaTime);
             yield return null;
         }
+
         Robot.transform.LookAt(new Vector3(Camera.main.transform.position.x, Robot.transform.position.y, Camera.main.transform.position.z));
         robotAnimator.SetBool("attack", true);
 
-        int rand = UnityEngine.Random.Range(0, animationPrefabs.Length);
+        int rand = UnityEngine.Random.Range(0, animationPrefabs.Length); //Picks a random particle effect to display when placing down piece
         Destroy(Instantiate(animationPrefabs[rand], new Vector3(PieceSpawnLocations[aiColIndex].transform.position.x, PieceSpawnLocations[aiColIndex].transform.position.y+.5f, PieceSpawnLocations[aiColIndex].transform.position.z), animationPrefabs[rand].transform.rotation), 2f);
 
-        yield return new WaitForSeconds(0.75f);
+        yield return new WaitForSeconds(0.75f); //teleports robot to the column where it's supposed to be placing a piece
         Robot.transform.position = new Vector3(PieceSpawnLocations[aiColIndex].transform.position.x, PieceSpawnLocations[aiColIndex].transform.position.y+.5f, PieceSpawnLocations[aiColIndex].transform.position.z);
         robotAnimator.SetBool("isRun", false);
         robotAnimator.SetBool("attack", false);
 
-        var go = Instantiate(maximizerPrefab, PieceSpawnLocations[aiColIndex].transform.position, maximizerPrefab.transform.rotation);
+        var go = Instantiate(maximizerPrefab, PieceSpawnLocations[aiColIndex].transform.position, maximizerPrefab.transform.rotation); //spawns a visual piece in the world
         go.GetComponent<Piece>().SetCol(VisualBoard[aiRow, aiColIndex].transform.position);
         placedPieces.AddFirst(go);
         if (HasWon(MAXIMIZER))
@@ -379,266 +291,104 @@ public class Main : MonoBehaviour {
         aiTurn = false;
     }
 
-    IEnumerator PlayTillEnd(float delay)
-    {
-        while(!HasWon(MAXIMIZER) && !HasWon(MINIMIZER))
-        {
-           
-            //old eval gaussian function
-            int colIndex = FindBestMove2(Board, MaxDepth);
-            int r = PlacePiece(colIndex, Board, MINIMIZER);
-            if (r != -1)
-            {
-                var go = Instantiate(minimizerPrefab, PieceSpawnLocations[colIndex].transform.position, minimizerPrefab.transform.rotation);
-                go.GetComponent<Piece>().SetCol(VisualBoard[r, colIndex].transform.position);
-                placedPieces.AddFirst(go);
+    #endregion
 
-                if (HasWon(MINIMIZER))
-                {
-                    isGameOver = true;
-                    Destroy(Instantiate(explosionPrefab), 10f);
-                    foreach (var pos in winLocations) tempHighlight.AddFirst(Instantiate(winningHighlightPrefab, new Vector3(pos.x, pos.y, pos.z), winningHighlightPrefab.transform.rotation));
-                    StartCoroutine(RobotDeath());
-                    gameStatusText.text = "minimizer(1) has won!";
-                    scoreText.text = "Player " + ++playerScore + " | " + " Ai: " + aiScore;
-                    break;
-                }
-            }
-           
-            yield return new WaitForSeconds(delay);
+    #region MiniMax
 
-            //MY FUNCTION
-            colIndex = FindBestMove(Board);
-            r = PlacePiece(colIndex, Board, MAXIMIZER);
-            if (r != -1)
-            {
-                var go2 = Instantiate(maximizerPrefab, PieceSpawnLocations[colIndex].transform.position, maximizerPrefab.transform.rotation);
-                go2.GetComponent<Piece>().SetCol(VisualBoard[r, colIndex].transform.position);
-                placedPieces.AddFirst(go2);
-
-                if (HasWon(MAXIMIZER))
-                {
-                    isGameOver = true;
-                    Destroy(Instantiate(explosionPrefab), 10f);
-                    foreach (var pos in winLocations) tempHighlight.AddFirst(Instantiate(winningHighlightPrefab, new Vector3(pos.x, pos.y, pos.z), winningHighlightPrefab.transform.rotation));
-                    StartCoroutine(RobotDeath());
-                    gameStatusText.text = "Maximizer(p2) has won!";
-                    scoreText.text = "Player " + ++playerScore + " | " + " Ai: " + aiScore;
-                    break;
-                }
-            }
-
-            yield return new WaitForSeconds(delay);
-
-        }
-    }
-    
-    int FindBestMove(int[,] board)
+    async Task<int> FindBestMove(int[,] board, int testParam) //multi threaded
     {
         int bestVal = int.MinValue;
         int bestMoveColumnIndex = 0;
-        iterativeBegun = true;
+        incrementTimer = true;
 
-        int maximumDepth = MaxDepth+2;
-        
-        
-        int val = 0;
-        for (int col = 3; val <= 3; val++) //check the middle row first, then one to the left, one to the right. This is more efficient as more valuable moves are made nearer to the center
+        int dynamicDepth = MAX_DEPTH;
+        if(MAX_DEPTH > 5) //only make it difficult if player chose a hard difficulty
         {
-            if (val == 0)
+            int columnsOccupied = 0;
+            for (int col = 0; col < boardColumns; col++) if (board[0, col] != 0) columnsOccupied++;
+            switch (columnsOccupied)
             {
-                if (Board[0, col] == 0) //check if board empty
-                {
-                    //make the move
-                    int[,] tempBoard = CopyBoard(board);
-                    PlacePiece(col, tempBoard, MAXIMIZER);
-                    int moveVal = Minimax(tempBoard, 0, maximumDepth, false, int.MinValue, int.MaxValue);
-                    if (moveVal > bestVal)
-                    {
-                        bestMoveColumnIndex = col;
-                        bestVal = moveVal;
-                    }
-                    //print("col: " + (col) + " value: " + moveVal);
-                }
-            }
-            else
-            {
-                if (Board[0, col - val] == 0) //check left
-                {
-                    int[,] tempBoard = CopyBoard(board);
-                    PlacePiece(col - val, tempBoard, MAXIMIZER);
-                    int moveVal = Minimax(tempBoard, 0, maximumDepth, false, int.MinValue, int.MaxValue);
-                    if (moveVal > bestVal)
-                    {
-                        bestMoveColumnIndex = col - val;
-                        bestVal = moveVal;
-                    }
-                    //print("col: " + (col - val) + " value: " + moveVal);
-                }
+                case 1:
+                    dynamicDepth = 9;
+                    break;
+                case 2:
+                    dynamicDepth = 11;
+                    break;
+                case 3:
+                    dynamicDepth = 13;
+                    break;
+                case 4:
+                    dynamicDepth = 19;
+                    break;
+                case 5:
+                    dynamicDepth = 21;
+                    break;
+                case 6:
+                    dynamicDepth = 23;
+                    break;
 
-                if (Board[0, col + val] == 0) //check right
-                {
-                    int[,] tempBoard = CopyBoard(board);
-                    PlacePiece(col + val, tempBoard, MAXIMIZER);
-                    int moveVal = Minimax(tempBoard, 0, maximumDepth, false, int.MinValue, int.MaxValue);
-                    if (moveVal > bestVal)
-                    {
-                        bestMoveColumnIndex = col + val;
-                        bestVal = moveVal;
-                    }
-                    //print("col: " + (col + val) + " value: " + moveVal);
-                }
             }
         }
         
-        /*
-        while(true)   //iterative deepening
+        var tasks = new List<Task<int>>();
+        var evaluatedColumns = new List<int>();
+
+        for (int col = 0; col < 7; col++)
         {
-            
-            int val = 0;
-            for (int col = 3; val <= 3; val++) //check the middle row first, then one to the left, one to the right. This is more efficient as more valuable moves are made nearer to the center
+            if (Board[0, col] == 0) //check if empty
             {
-                if (val == 0)
-                {
-                    if (Board[0, col] == 0) //check if board empty
-                    {
-                        //make the move
-                        int[,] tempBoard = CopyBoard(board);
-                        PlacePiece(col, tempBoard, MAXIMIZER);
-                        int moveVal = Minimax(tempBoard, 0, maximumDepth, false, int.MinValue, int.MaxValue);
-                        if (moveVal > bestVal)
-                        {
-                            bestMoveColumnIndex = col;
-                            bestVal = moveVal;
-                        }
-                        //print("col: " + (col) + " value: " + moveVal);
-                    }
-                }
-                else
-                {
-                    if (Board[0, col - val] == 0) //check left
-                    {
-                        int[,] tempBoard = CopyBoard(board);
-                        PlacePiece(col - val, tempBoard, MAXIMIZER);
-                        int moveVal = Minimax(tempBoard, 0, maximumDepth, false, int.MinValue, int.MaxValue);
-                        if (moveVal > bestVal)
-                        {
-                            bestMoveColumnIndex = col - val;
-                            bestVal = moveVal;
-                        }
-                        //print("col: " + (col - val) + " value: " + moveVal);
-                    }
-
-                    if (Board[0, col + val] == 0) //check right
-                    {
-                        int[,] tempBoard = CopyBoard(board);
-                        PlacePiece(col + val, tempBoard, MAXIMIZER);
-                        int moveVal = Minimax(tempBoard, 0, maximumDepth, false, int.MinValue, int.MaxValue);
-                        if (moveVal > bestVal)
-                        {
-                            bestMoveColumnIndex = col + val;
-                            bestVal = moveVal;
-                        }
-                        //print("col: " + (col + val) + " value: " + moveVal);
-                    }
-                }
+                int[,] tempBoard = CopyBoard(board);
+                PlacePiece(col, tempBoard, MAXIMIZER);
+                tasks.Add(Task.Run(() => Minimax(tempBoard, 0, dynamicDepth, false, int.MinValue, int.MaxValue)));
+                evaluatedColumns.Add(col);
             }
+        }
 
-            if (currentTimer >= MaxIterativeTimeout)
+        await Task.WhenAll(tasks.ToArray());
+
+        for (int c = 0; c < evaluatedColumns.Count; c++)
+        {
+            int val = tasks[c].Result;
+            if (val > bestVal)
             {
-                if (maximumDepth % 2 == 0)
-                {
-                    maximumDepth++;
-                    val = 0;
-                    for (int col = 3; val <= 3; val++) //check the middle row first, then one to the left, one to the right. This is more efficient as more valuable moves are made nearer to the center
-                    {
-                        if (val == 0)
-                        {
-                            if (Board[0, col] == 0) //check if board empty
-                            {
-                                //make the move
-                                int[,] tempBoard = CopyBoard(board);
-                                PlacePiece(col, tempBoard, MAXIMIZER);
-                                int moveVal = Minimax(tempBoard, 0, maximumDepth, false, int.MinValue, int.MaxValue);
-                                if (moveVal > bestVal)
-                                {
-                                    bestMoveColumnIndex = col;
-                                    bestVal = moveVal;
-                                }
-                                //print("col: " + (col) + " value: " + moveVal);
-                            }
-                        }
-                        else
-                        {
-                            if (Board[0, col - val] == 0) //check left
-                            {
-                                int[,] tempBoard = CopyBoard(board);
-                                PlacePiece(col - val, tempBoard, MAXIMIZER);
-                                int moveVal = Minimax(tempBoard, 0, maximumDepth, false, int.MinValue, int.MaxValue);
-                                if (moveVal > bestVal)
-                                {
-                                    bestMoveColumnIndex = col - val;
-                                    bestVal = moveVal;
-                                }
-                                //print("col: " + (col - val) + " value: " + moveVal);
-                            }
-
-                            if (Board[0, col + val] == 0) //check right
-                            {
-                                int[,] tempBoard = CopyBoard(board);
-                                PlacePiece(col + val, tempBoard, MAXIMIZER);
-                                int moveVal = Minimax(tempBoard, 0, maximumDepth, false, int.MinValue, int.MaxValue);
-                                if (moveVal > bestVal)
-                                {
-                                    bestMoveColumnIndex = col + val;
-                                    bestVal = moveVal;
-                                }
-                                //print("col: " + (col + val) + " value: " + moveVal);
-                            }
-                        }
-                    }
-                }
-                break;
+                bestMoveColumnIndex = evaluatedColumns[c];
+                bestVal = val;
             }
-
-            maximumDepth++;
-        }*/
-
+        }
         print("best move index: " + bestMoveColumnIndex);
-        print("maximumDepth: " + maximumDepth);
-        iterativeBegun = false;
-        currentTimer = 0;
+        incrementTimer = false;
         return bestMoveColumnIndex;
     }
 
-    public int testmaximumTraversed = 0;
     int Minimax(int[,] board, int currentDepth, int maxDepth, bool isMax, int alpha, int beta)
     {
-       
-        if (testmaximumTraversed < currentDepth) testmaximumTraversed = currentDepth;
-        /*
-        int hash = GetBoardHash(board), score;
-        if (!transpositionTable.Contains(hash))
+        if (maximumDepthTravelled < currentDepth) maximumDepthTravelled = currentDepth;
+        int hash = GetBoardHash(board), score; //score = Evaluate(board, isMax) - currentDepth; 
+
+        lock (minimaxLock)  //hashtable lookup for scores
         {
-            score = Evaluate(board, isMax);
-            transpositionTable.Add(hash, score);
+            if (!transpositionTable.Contains(hash))
+            {
+                score = Evaluate(board, isMax);
+                transpositionTable.Add(hash, score);
+            }
+            else
+            {
+                hashHitCount++;
+                score = (int)transpositionTable[hash];
+            }
+            score -= currentDepth;
         }
-        else score = (int)transpositionTable[hash];
-        score -= currentDepth;
-        */
-        int score = Evaluate(board, isMax) - currentDepth; 
+
         if (score >= winScore - 100000) return score - currentDepth;
         if (score < loseScore + 100000) return score + currentDepth; //minimizer won
         if (!IsMovesLeft() || currentDepth >= maxDepth) return score - currentDepth; //currentDepth >= maxDepth
 
-
         if (isMax)
         {
             int best = int.MinValue;
-            //traverse all cells
-
             int val = 0;
-            for (int col = 3; val <= 3; val++)
+            for (int col = 3; val <= 3; val++) //traverse all cells
             {
                 if (val == 0)
                 {
@@ -646,12 +396,10 @@ public class Main : MonoBehaviour {
                     {
                         int[,] tempBoard = CopyBoard(board);  //make the move
                         PlacePiece(col, tempBoard, MAXIMIZER);
-                        //call minimax recursively and choose the max value
-                        int result = Minimax(tempBoard, currentDepth + 1, maxDepth, !isMax, alpha, beta);
+                        int result = Minimax(tempBoard, currentDepth + 1, maxDepth, !isMax, alpha, beta); //call minimax recursively and choose the max value
                         if (result > best) best = result;
                         if (best > alpha) alpha = best;
-                        //if (beta <= alpha) break;
-                        if (alpha >= beta) break;
+                        if (alpha >= beta) break; //if (beta <= alpha) break;
                     }
                 }
                 else
@@ -660,36 +408,27 @@ public class Main : MonoBehaviour {
                     {
                         int[,] tempBoard = CopyBoard(board);  //make the move
                         PlacePiece(col - val, tempBoard, MAXIMIZER);
-                        //call minimax recursively and choose the max value
                         int result = Minimax(tempBoard, currentDepth + 1, maxDepth, !isMax, alpha, beta);
                         if (result > best) best = result;
                         if (best > alpha) alpha = best;
                         if (alpha >= beta) break;
                     }
-
                     if (Board[0, col + val] == 0) //check right
                     {
-
                         int[,] tempBoard = CopyBoard(board);  //make the move
                         PlacePiece(col + val, tempBoard, MAXIMIZER);
-                        //call minimax recursively and choose the max value
                         int result = Minimax(tempBoard, currentDepth + 1, maxDepth, !isMax, alpha, beta);
                         if (result > best) best = result;
                         if (best > alpha) alpha = best;
                         if (alpha >= beta) break;
-                        
                     }
                 }
-
             }
-
-
             return best;
         }
-        else// If this minimizer's move 
+        else // If this minimizer's move 
         {
             int best = int.MaxValue;
-
             int val = 0;
             for (int col = 3; val <= 3; val++)
             {
@@ -716,93 +455,73 @@ public class Main : MonoBehaviour {
                         if (best < beta) beta = best;
                         if (alpha >= beta) break;
                     }
-
                     if (Board[0, col + val] == 0) //check right
                     {
                         int[,] tempBoard = CopyBoard(board); //make the move
                         PlacePiece(col + val, tempBoard, MINIMIZER);
-                        int result = Minimax(tempBoard, currentDepth + 1, maxDepth, !isMax, alpha, beta); //call minimax recursively and choose the mininum value
+                        int result = Minimax(tempBoard, currentDepth + 1, maxDepth, !isMax, alpha, beta);
                         if (result < best) best = result;
                         if (best < beta) beta = best;
-                        if (alpha >= beta) break;//if(beta <= alpha) break;
-
+                        if (alpha >= beta) break;
                     }
                 }
-
             }
             return best;
         }
     }
 
-    int[,] CopyBoard(int[,] board) //copys a board to another board, since passsing by value is hard
+    public void SelectWhoGoesFirst(int selection)
     {
-        int[,] newArr = new int[6, 7];
-        for (int row = 0; row < board.GetLength(0); row++)
-            for (int col = 0; col < board.GetLength(1); col++) newArr[row, col] = board[row, col];
-
-        return newArr;
+        if (selection == 0) ExecuteTurn(MAXIMIZER); //ai turn
+        selectionPanel.SetActive(false);
+        hasSelected = true;
     }
 
-    int PlacePiece(int columnIndex, int[,] board, int player) //columnIndex should be between 0 and 6
+    void ExecuteTurn(int player)    //executes a turn for either the minimizer or maximizer
     {
-        if (columnIndex < 0 || columnIndex > board.GetLength(0)) return -1;
+        if (aiTurn || isGameOver) return;
 
-        if (board[0, columnIndex] != 0) return -1; //check if top spot is ok
-
-        for (int row = board.GetLength(0) - 1; row >= 0; row--)
+        if (player == MAXIMIZER) //Ai Player as maximizer
         {
-            if (board[row, columnIndex] == 0)
+            robotThinking = true;
+            StartCoroutine(AnimateRobotThinkingText());
+            _AiTurnThread = new Thread(AiTurnThread);
+            if (!_AiTurnThread.IsAlive) _AiTurnThread.Start();
+        }
+        else if (player == MINIMIZER)    //human player as minimizer
+        {
+            int r = PlacePiece(currentSelectionIndex, Board, MINIMIZER);
+            if (r == -1) return;
+            var go = Instantiate(minimizerPrefab, PieceSpawnLocations[currentSelectionIndex].transform.position, minimizerPrefab.transform.rotation);
+            go.GetComponent<Piece>().SetCol(VisualBoard[r, currentSelectionIndex].transform.position);
+            placedPieces.AddFirst(go);
+            if (HasWon(MINIMIZER))
             {
-                board[row, columnIndex] = player;
-                return row;
+                isGameOver = true;
+                Destroy(Instantiate(explosionPrefab), 10f);
+                foreach (var pos in winLocations) tempHighlight.AddFirst(Instantiate(winningHighlightPrefab, new Vector3(pos.x, pos.y, pos.z), winningHighlightPrefab.transform.rotation));
+                StartCoroutine(RobotDeath());
+                gameStatusText.text = "Player has won!";
+                scoreText.text = "Player " + ++playerScore + " | " + " Ai: " + aiScore;
+                return;
             }
         }
-        return -1;
     }
 
-    bool IsMovesLeft()
+    void AiTurnThread() //Ai Thread - we don't want the game to freeze while minimax is recursing
     {
-        for (int row = 0; row < Board.GetLength(0); row++)
-            for (int col = 0; col < Board.GetLength(1); col++)
-                if (Board[row, col] == 0) return true;
-
-        return false;
+        aiTurn = true;
+        aiColIndex = FindBestMove(Board, 1337).Result;
+        if (aiRow != -1) aiRow = PlacePiece(aiColIndex, Board, MAXIMIZER);
+        threadFin = true;
+        print("ai thread finished");
+        robotThinking = false;
+        Thread.CurrentThread.Abort(); //end current thread
     }
 
+    #endregion
 
-    #region EvaluationFunction
-
-    readonly int[,] EvaluationTable =     {{3, 4, 5, 7, 5, 4, 3},
-                                          {4, 6, 8, 10, 8, 6, 4},
-                                          {5, 8, 11, 13, 11, 8, 5},
-                                          {5, 8, 11, 13, 11, 8, 5},
-                                          {4, 6, 8, 10, 8, 6, 4},
-                                          {3, 4, 5, 7, 5, 4, 3}};
-    /**
-     * A better evaluation function - prioritizes moves nearer to the middle of the board, as they have higher value.
-     *  
-     *  This function utilizes the values from evaluation table above, and the numbers within evaluation table basically tells the computer
-     *  the total number of possible 4 in a rows that are included in that spot. so The top left corner can only have 3 possible 4 in a rows (one horizontal, one vertical, one diagonal)
-     *  The more possible 4 in a rows, the higher the score.
-     *  
-     *  The value in each square is a herustic of how useful any given square is for ultimately winning a game. It's not a perfect solution; rather it makes many assumptions in order to save performance.
-     *  
-     *  The utility value is 138, since t he sum of all values in the table is 276 -> 276/2 = 138
-     *  It returns 0 if both players are equally likely to win,
-     *  a value smaller than 0 if minimizer is likely to win
-     *  a value greater than 0 if maximizer is likely to win.
-     * */
-    int EvaluateContent(int[,] board)
-    {
-        int utility = 138, sum = 0;
-        for (int i = 0; i < boardRows; i++)
-            for (int j = 0; j < boardColumns; j++)
-                if (board[i,j] == MAXIMIZER) sum += EvaluationTable[i,j];
-                else if (board[i,j] == MINIMIZER) sum -= EvaluationTable[i,j];
-        return utility + sum;
-    }
-
-    public int evalCount = 0;
+    #region EvaluationFunctions
 
     int Evaluate(int[,] board, bool isMax) //Scoring function - There should be 69 possible ways to win on an empty board.
     {
@@ -827,128 +546,21 @@ public class Main : MonoBehaviour {
                 if (board[i, j] == MAXIMIZER && board[i - 1, j - 1] == MAXIMIZER && board[i - 2, j - 2] == MAXIMIZER && board[i - 3, j - 3] == MAXIMIZER) return winScore;
                 else if (board[i, j] == MINIMIZER && board[i - 1, j - 1] == MINIMIZER && board[i - 2, j - 2] == MINIMIZER && board[i - 3, j - 3] == MINIMIZER) return loseScore;
 
-        //return EvaluateContent(board);        
-        
-        int player = MINIMIZER;
-        if (isMax) player = MAXIMIZER;
-        return HerrmannEvaluation(board, player);
-        //return GettingWinningMoveCount(board, MAXIMIZER) - GettingWinningMoveCount(board, MINIMIZER); //return EvaluateContent(board);  
+        return HerrmannStaticEvaluation(board, isMax);
     }
 
-    const int threeInARowValue = 50;
-    const int twoInARow = 10;
-    //Test evaluation function. it works but is not efficient, since it needs to be called twice to subtract the score from maximizer - minimizer.
-    int GettingWinningMoveCount(int[,] board, int player)
-    {
-        //There should be 69 possible ways to win on an empty board.
-        int winningMoves = 0;
-        //1 - look at rows first (24 ways to win)
-        for (int row = 0; row < board.GetLength(0); row++)
-            for (int col = 0; col < 4; col++) //only need to look at 4 ways to win per  
-                if ((board[row, col] == 0 || board[row, col] == player) &&
-                   (board[row, col + 1] == 0 || board[row, col + 1] == player) &&
-                   (board[row, col + 2] == 0 || board[row, col + 2] == player) &&
-                   (board[row, col + 3] == 0 || board[row, col + 3] == player))
-                    winningMoves++;
-
-        //2 - look at vertical (3 * 7 = 21 ways)
-        for (int row = 0; row < 3; row++)
-            for (int col = 0; col < board.GetLength(1); col++) //only need to look at 4 ways to win per  
-                if ((board[row, col] == 0 || board[row, col] == player) &&
-                   (board[row + 1, col] == 0 || board[row + 1, col] == player) &&
-                   (board[row + 2, col] == 0 || board[row + 2, col] == player) &&
-                   (board[row + 3, col] == 0 || board[row + 3, col] == player))
-                    winningMoves++;
-
-        //3 - look at diagonal right and down (12), right to up (12)
-        for (int col = 0; col < 4; col++)
-        {
-            for (int row = 0; row < 3; row++)
-                if ((board[row, col] == 0 || board[row, col] == player) &&
-                    (board[row + 1, col + 1] == 0 || board[row + 1, col + 1] == player) &&
-                    (board[row + 2, col + 2] == 0 || board[row + 2, col + 2] == player) &&
-                    (board[row + 3, col + 3] == 0 || board[row + 3, col + 3] == player))
-                    winningMoves++;
-
-            for (int row = 3; row < 6; row++)
-
-                if ((board[row, col] == 0 || board[row, col] == player) &&
-                    (board[row - 1, col + 1] == 0 || board[row - 1, col + 1] == player) &&
-                    (board[row - 2, col + 2] == 0 || board[row - 2, col + 2] == player) &&
-                    (board[row - 3, col + 3] == 0 || board[row - 3, col + 3] == player))
-                    winningMoves++;
-        }
-
-        //Look at rows of XXX_ XX_X X_XX _XXX
-        for (int row = 0; row < board.GetLength(0); row++)
-            for (int col = 0; col < 4; col++) //only need to look at 4 ways to win per  
-                if ((board[row, col] == player) &&
-                   (board[row, col + 1] == player) &&
-                   (board[row, col + 2] == player) &&
-                   (board[row, col + 3] == 0))
-                    winningMoves += threeInARowValue;
-                else if ((board[row, col] == player) &&
-                   (board[row, col + 1] == player) &&
-                   (board[row, col + 2] == 0) &&
-                   (board[row, col + 3] == player))
-                    winningMoves += threeInARowValue;
-                else if ((board[row, col] == player) &&
-                   (board[row, col + 1] == 0) &&
-                   (board[row, col + 2] == player) &&
-                   (board[row, col + 3] == player))
-                    winningMoves += threeInARowValue;
-                else if ((board[row, col] == 0) &&
-                   (board[row, col + 1] == player) &&
-                   (board[row, col + 2] == player) &&
-                   (board[row, col + 3] == player))
-                    winningMoves += threeInARowValue;
-                else if ((board[row, col] == player) && //look at 2 in a rows XX__ _XX_ __XX
-                   (board[row, col + 1] == player) &&
-                   (board[row, col + 2] == 0) &&
-                   (board[row, col + 3] == 0))
-                    winningMoves += twoInARow;
-                else if ((board[row, col] == 0) &&
-                   (board[row, col + 1] == player) &&
-                   (board[row, col + 2] == player) &&
-                   (board[row, col + 3] == 0))
-                    winningMoves += twoInARow;
-                else if ((board[row, col] == 0) &&
-                   (board[row, col + 1] == 0) &&
-                   (board[row, col + 2] == player) &&
-                   (board[row, col + 3] == player))
-                    winningMoves += twoInARow;
-
-        //Look at columns
-        //_
-        //_  
-        //X 
-        //X 
-        for (int row = 5; row >= 3; row--)
-            for (int col = 0; col < board.GetLength(1); col++)
-                if ((board[row, col] == player) &&
-                   (board[row - 1, col] == player) &&
-                   (board[row - 2, col] == 0) &&
-                   (board[row - 3, col] == 0))
-                    winningMoves += twoInARow;
-                else if ((board[row, col] == player) &&
-                          (board[row - 1, col] == player) &&
-                          (board[row - 2, col] == player) &&
-                          (board[row - 3, col] == 0))
-                    winningMoves += threeInARowValue;
-
-        return winningMoves;
-    }
-
-
-    public int DANGER_FACTOR = 150;
-    public int GOOD_FACTOR = 25;
+    [Range(1, 300)]
+    public int DefensiveFactor = 150;
+    [Range(1, 300)]
+    public int OffensiveFactor = 25;
     readonly int NumberToConnect = 4;
     readonly float maxAllowablePerc = 0.75f;
-    int HerrmannEvaluation(int[,] board, int player)
+
+    int HerrmannStaticEvaluation(int[,] board, bool isMax)
     {
+        int player = (isMax) ? MAXIMIZER: MINIMIZER;
         int maximizerTokens=0, minimizerTokens=0, emptyCount = 0;
         float danger = 0, goodness = 0;
-
         //1 - look at rows first (24 ways to win)
         for (int row = 0; row < board.GetLength(0); row++)
             for (int col = 0; col < 4; col++) //only need to look at 4 ways to win per 
@@ -983,9 +595,9 @@ public class Main : MonoBehaviour {
 
                 if (player == MINIMIZER)
                 {
-                    if(minimizerTokens == 0 && maximizerTokens >= 2) danger += (maximizerTokens / NumberToConnect) * (DANGER_FACTOR / maxAllowablePerc); //danger value
+                    if(minimizerTokens == 0 && maximizerTokens >= 2) danger += (maximizerTokens / NumberToConnect) * (DefensiveFactor / maxAllowablePerc); //danger value
                    
-                    if(maximizerTokens == 0) goodness += minimizerTokens * GOOD_FACTOR; //goodness values
+                    if(maximizerTokens == 0) goodness += minimizerTokens * OffensiveFactor; //goodness values
 
                     if (minimizerTokens >= 1 && maximizerTokens >= 1)
                         if (emptyCount == 0) goodness += 12;
@@ -994,8 +606,8 @@ public class Main : MonoBehaviour {
                 }
                 else if (player == MAXIMIZER)
                 {
-                    if (maximizerTokens == 0 && minimizerTokens >= 2) danger += (minimizerTokens / NumberToConnect) * (DANGER_FACTOR / maxAllowablePerc);
-                    if (minimizerTokens == 0) goodness += maximizerTokens * GOOD_FACTOR; //goodness values
+                    if (maximizerTokens == 0 && minimizerTokens >= 2) danger += (minimizerTokens / NumberToConnect) * (DefensiveFactor / maxAllowablePerc);
+                    if (minimizerTokens == 0) goodness += maximizerTokens * OffensiveFactor; //goodness values
                     if (minimizerTokens >= 1 && maximizerTokens >= 1)
                         if (emptyCount == 0) goodness += 12;
                         else goodness += 6;
@@ -1041,9 +653,9 @@ public class Main : MonoBehaviour {
 
                 if (player == MINIMIZER)
                 {
-                    if (minimizerTokens == 0 && maximizerTokens >= 2) danger += (maximizerTokens / NumberToConnect) * (DANGER_FACTOR / maxAllowablePerc); //danger value
+                    if (minimizerTokens == 0 && maximizerTokens >= 2) danger += (maximizerTokens / NumberToConnect) * (DefensiveFactor / maxAllowablePerc); //danger value
 
-                    if (maximizerTokens == 0) goodness += minimizerTokens * GOOD_FACTOR; //goodness values
+                    if (maximizerTokens == 0) goodness += minimizerTokens * OffensiveFactor; //goodness values
 
                     if (minimizerTokens >= 1 && maximizerTokens >= 1)
                         if (emptyCount == 0) goodness += 12;
@@ -1051,8 +663,8 @@ public class Main : MonoBehaviour {
                 }
                 else if (player == MAXIMIZER)
                 {
-                    if (maximizerTokens == 0 && minimizerTokens >= 2) danger += (minimizerTokens / NumberToConnect) * (DANGER_FACTOR / maxAllowablePerc);  //otherplayertoken / number to connect
-                    if (minimizerTokens == 0) goodness += maximizerTokens * GOOD_FACTOR; //goodness values
+                    if (maximizerTokens == 0 && minimizerTokens >= 2) danger += (minimizerTokens / NumberToConnect) * (DefensiveFactor / maxAllowablePerc);  //otherplayertoken / number to connect
+                    if (minimizerTokens == 0) goodness += maximizerTokens * OffensiveFactor; //goodness values
                     if (minimizerTokens >= 1 && maximizerTokens >= 1)
                         if (emptyCount == 0) goodness += 12;
                         else goodness += 6;
@@ -1100,24 +712,20 @@ public class Main : MonoBehaviour {
 
                 if (player == MINIMIZER)
                 {
-                    if (minimizerTokens == 0 && maximizerTokens >= 2) danger += (maximizerTokens / NumberToConnect) * (DANGER_FACTOR / maxAllowablePerc); //danger value
-
-                    if (maximizerTokens == 0) goodness += minimizerTokens * GOOD_FACTOR; //goodness values
-
+                    if (minimizerTokens == 0 && maximizerTokens >= 2) danger += (maximizerTokens / NumberToConnect) * (DefensiveFactor / maxAllowablePerc); //danger value
+                    if (maximizerTokens == 0) goodness += minimizerTokens * OffensiveFactor; //goodness values
                     if (minimizerTokens >= 1 && maximizerTokens >= 1)
                         if (emptyCount == 0) goodness += 12;
                         else goodness += 6;
                 }
                 else if (player == MAXIMIZER)
                 {
-                    if (maximizerTokens == 0 && minimizerTokens >= 2) danger += (minimizerTokens / NumberToConnect) * (DANGER_FACTOR / maxAllowablePerc);
-
-                    if (minimizerTokens == 0) goodness += maximizerTokens * GOOD_FACTOR; //goodness values
+                    if (maximizerTokens == 0 && minimizerTokens >= 2) danger += (minimizerTokens / NumberToConnect) * (DefensiveFactor / maxAllowablePerc);
+                    if (minimizerTokens == 0) goodness += maximizerTokens * OffensiveFactor; //goodness values
                     if (minimizerTokens >= 1 && maximizerTokens >= 1)
                         if (emptyCount == 0) goodness += 12;
                         else goodness += 6;
                 }
-
                 minimizerTokens = 0;
                 maximizerTokens = 0;
                 emptyCount = 0;
@@ -1155,47 +763,108 @@ public class Main : MonoBehaviour {
 
                 if (player == MINIMIZER)
                 {
-                    if (minimizerTokens == 0 && maximizerTokens >= 2) danger += (maximizerTokens / NumberToConnect) * (DANGER_FACTOR / maxAllowablePerc); //danger value
-
-                    if (maximizerTokens == 0) goodness += minimizerTokens * GOOD_FACTOR; //goodness values
-
+                    if (minimizerTokens == 0 && maximizerTokens >= 2) danger += (maximizerTokens / NumberToConnect) * (DefensiveFactor / maxAllowablePerc); //danger value
+                    if (maximizerTokens == 0) goodness += minimizerTokens * OffensiveFactor; //goodness values
                     if (minimizerTokens >= 1 && maximizerTokens >= 1)
                         if (emptyCount == 0) goodness += 12;
                         else goodness += 6;
                 }
                 else if (player == MAXIMIZER)
                 {
-                    if (maximizerTokens == 0 && minimizerTokens >= 2) danger += (minimizerTokens / NumberToConnect) * (DANGER_FACTOR / maxAllowablePerc);
-
-                    if (minimizerTokens == 0) goodness += maximizerTokens * GOOD_FACTOR; //goodness values
+                    if (maximizerTokens == 0 && minimizerTokens >= 2) danger += (minimizerTokens / NumberToConnect) * (DefensiveFactor / maxAllowablePerc);
+                    if (minimizerTokens == 0) goodness += maximizerTokens * OffensiveFactor; //goodness values
                     if (minimizerTokens >= 1 && maximizerTokens >= 1)
                         if (emptyCount == 0) goodness += 12;
                         else goodness += 6;
                 }
-
                 minimizerTokens = 0;
                 maximizerTokens = 0;
                 emptyCount = 0;
             }
-
         }
+        return (player == MAXIMIZER) ? (int)(goodness - danger) : (int)(goodness - danger) * -1;  //if (player == MAXIMIZER) return (int)(goodness - danger); else return (int)(goodness - danger) * -1;
+    }
 
-        if (player == MAXIMIZER) return (int)(goodness - danger);
-        else return (int)(goodness - danger) * -1;
-
+    /**
+     * A faster evaluation function - prioritizes moves nearer to the middle of the board, as they have higher value. 
+     * Source = https://softwareengineering.stackexchange.com/questions/263514/why-does-this-evaluation-function-work-in-a-connect-four-game-in-java
+     *  
+     *  This function utilizes the values from evaluation table, and the numbers within evaluation table basically tells the computer
+     *  the total number of possible 4 in a rows that are included in that spot. so The top left corner can only have 3 possible 4 in a rows (one horizontal, one vertical, one diagonal)
+     *  The more possible 4 in a rows, the higher the score.
+     *  
+     *  The value in each square is a herustic of how useful any given square is for ultimately winning a game. It's not a perfect solution; rather it makes many assumptions in order to save performance.
+     *  
+     *  The utility value is 138, since the sum of all values in the table is 276 -> 276/2 = 138
+     *  It returns 0 if both players are equally likely to win,
+     *  a value smaller than 0 if minimizer is likely to win
+     *  a value greater than 0 if maximizer is likely to win.
+     * */
+    readonly int[,] EvaluationTable =     {{3, 4, 5, 7, 5, 4, 3},
+                                          {4, 6, 8, 10, 8, 6, 4},
+                                          {5, 8, 11, 13, 11, 8, 5},
+                                          {5, 8, 11, 13, 11, 8, 5},
+                                          {4, 6, 8, 10, 8, 6, 4},
+                                          {3, 4, 5, 7, 5, 4, 3}};
+    int EvaluateContent(int[,] board)
+    {
+        int utility = 138, sum = 0;
+        for (int i = 0; i < boardRows; i++)
+            for (int j = 0; j < boardColumns; j++)
+                if (board[i, j] == MAXIMIZER) sum += EvaluationTable[i, j];
+                else if (board[i, j] == MINIMIZER) sum -= EvaluationTable[i, j];
+        return utility + sum;
     }
 
     #endregion
 
+    #region UtilityFunctions
+
+
+    int[,] CopyBoard(int[,] board) //copys a board to another board, since passsing by value is hard
+    {
+        int[,] newArr = new int[6, 7];
+        for (int row = 0; row < board.GetLength(0); row++)
+            for (int col = 0; col < board.GetLength(1); col++) newArr[row, col] = board[row, col];
+
+        return newArr;
+    }
+
+    int PlacePiece(int columnIndex, int[,] board, int player) //columnIndex should be between 0 and 6
+    {
+        if (columnIndex < 0 || columnIndex > board.GetLength(0)) return -1;
+
+        if (board[0, columnIndex] != 0) return -1; //check if top spot is ok
+
+        for (int row = board.GetLength(0) - 1; row >= 0; row--)
+        {
+            if (board[row, columnIndex] == 0)
+            {
+                board[row, columnIndex] = player;
+                return row;
+            }
+        }
+        return -1;
+    }
+
+    bool IsMovesLeft()
+    {
+        for (int row = 0; row < Board.GetLength(0); row++)
+            for (int col = 0; col < Board.GetLength(1); col++)
+                if (Board[row, col] == 0) return true;
+
+        return false;
+    }
 
     void PrintBoard(int[,] board)
     {
         string output = "";
         print("[");
-        for (int row = 0; row < board.GetLength(0); row++) { 
+        for (int row = 0; row < board.GetLength(0); row++)
+        {
             for (int col = 0; col < board.GetLength(1); col++)
                 output += board[row, col] + ", ";
-            
+
             print(output);
             output = "";
         }
@@ -1211,10 +880,10 @@ public class Main : MonoBehaviour {
                    (Board[row, col] == Board[row, col + 2]) &&
                    (Board[row, col] == Board[row, col + 3]))
                 {
-                    winLocations.AddFirst(VisualBoard[row,col].transform.position);
-                    winLocations.AddFirst(VisualBoard[row, col+1].transform.position);
-                    winLocations.AddFirst(VisualBoard[row, col+2].transform.position);
-                    winLocations.AddFirst(VisualBoard[row, col+3].transform.position);
+                    winLocations.AddFirst(VisualBoard[row, col].transform.position);
+                    winLocations.AddFirst(VisualBoard[row, col + 1].transform.position);
+                    winLocations.AddFirst(VisualBoard[row, col + 2].transform.position);
+                    winLocations.AddFirst(VisualBoard[row, col + 3].transform.position);
                     return true;
                 }
 
@@ -1226,9 +895,9 @@ public class Main : MonoBehaviour {
                    (Board[row, col] == Board[row + 3, col]))
                 {
                     winLocations.AddFirst(VisualBoard[row, col].transform.position);
-                    winLocations.AddFirst(VisualBoard[row+1, col].transform.position);
-                    winLocations.AddFirst(VisualBoard[row+2, col].transform.position);
-                    winLocations.AddFirst(VisualBoard[row+3, col].transform.position);
+                    winLocations.AddFirst(VisualBoard[row + 1, col].transform.position);
+                    winLocations.AddFirst(VisualBoard[row + 2, col].transform.position);
+                    winLocations.AddFirst(VisualBoard[row + 3, col].transform.position);
                     return true;
                 }
 
@@ -1241,9 +910,9 @@ public class Main : MonoBehaviour {
                     (Board[row, col] == Board[row + 3, col + 3]))
                 {
                     winLocations.AddFirst(VisualBoard[row, col].transform.position);
-                    winLocations.AddFirst(VisualBoard[row+1, col+1].transform.position);
-                    winLocations.AddFirst(VisualBoard[row+2, col+2].transform.position);
-                    winLocations.AddFirst(VisualBoard[row+3, col+3].transform.position);
+                    winLocations.AddFirst(VisualBoard[row + 1, col + 1].transform.position);
+                    winLocations.AddFirst(VisualBoard[row + 2, col + 2].transform.position);
+                    winLocations.AddFirst(VisualBoard[row + 3, col + 3].transform.position);
                     return true;
                 }
 
@@ -1254,23 +923,25 @@ public class Main : MonoBehaviour {
                     (Board[row, col] == Board[row - 3, col + 3]))
                 {
                     winLocations.AddFirst(VisualBoard[row, col].transform.position);
-                    winLocations.AddFirst(VisualBoard[row-1, col+1].transform.position);
-                    winLocations.AddFirst(VisualBoard[row-2, col+2].transform.position);
-                    winLocations.AddFirst(VisualBoard[row-3, col+3].transform.position);
+                    winLocations.AddFirst(VisualBoard[row - 1, col + 1].transform.position);
+                    winLocations.AddFirst(VisualBoard[row - 2, col + 2].transform.position);
+                    winLocations.AddFirst(VisualBoard[row - 3, col + 3].transform.position);
                     return true;
                 }
         }
         return false;
     }
 
+
+    #endregion
+
+    #region TableLookupFunctions
+
     bool SaveTranspositionTable()
     {
-
         try
         {
- 
-            // write the data to a file
-            var binformatter = new System.Runtime.Serialization.Formatters.Binary.BinaryFormatter();
+            var binformatter = new System.Runtime.Serialization.Formatters.Binary.BinaryFormatter(); // write the data to a file
             string dir = Directory.GetCurrentDirectory() + "\\TranspositionTable.txt";
             using (var fs = File.Create(dir))
             {
@@ -1296,7 +967,6 @@ public class Main : MonoBehaviour {
             {
                 deserialized = (Hashtable)binformatter.Deserialize(fs);
             }
-           
         }
         catch (Exception e)
         {
@@ -1308,10 +978,8 @@ public class Main : MonoBehaviour {
         return deserialized;
     }
 
-
     int GetBoardHash(int[,] board)
     {
-
         unchecked
         {
             const int p = 16777619;
@@ -1330,106 +998,29 @@ public class Main : MonoBehaviour {
 
             return hash;
         }
-
     }
 
-
-    int FindBestMove2(int[,] board, int maxDepth)
+    int GetNodeHash(int boardHash, int currentDepth, int alpha, int beta)
     {
-        int bestVal = int.MaxValue;
-        int bestMoveColumnIndex = 0;
-        for (int col = 0; col < board.GetLength(1); col++)
+        unchecked
         {
-            if (Board[0, col] == 0) //check if board empty
-            {
-                //make the move
-                int[,] tempBoard = CopyBoard(board);
-                PlacePiece(col, tempBoard, MINIMIZER);
-                int moveVal = Minimax2(tempBoard, maxDepth, 0, true, int.MinValue, int.MaxValue);
-                if (moveVal < bestVal)
-                {
-                    bestMoveColumnIndex = col;
-                    bestVal = moveVal;
-                }
+            const int p = 16777619;
+            int hash = (int)2166136261;
 
-                //print("moveVal: " + moveVal);
-            }
-        }
-        //print("Best val: " + bestVal);
-        return bestMoveColumnIndex;
-    }
+            hash = (hash ^ boardHash) * p;
+            hash = (hash ^ currentDepth) * p;
+            hash = (hash ^ alpha) * p;
+            hash = (hash ^ beta) * p;
 
-    int Minimax2(int[,] board, int maxDepth, int currentDepth, bool isMax, int alpha, int beta)
-    {
-        int score = Evaluate2(board, isMax) - currentDepth;
-        if (score >= winScore - 1000000) return score - currentDepth;
-        if (score < loseScore + 1000000) return score + currentDepth; //minimizer won
-        if (!IsMovesLeft() || currentDepth >= maxDepth) return score - currentDepth; //might be a tie? 
+            hash += hash << 13;
+            hash ^= hash >> 7;
+            hash += hash << 3;
+            hash ^= hash >> 17;
+            hash += hash << 5;
 
-        if (isMax)
-        {
-            int best = int.MinValue;
-            //traverse all cells
-            for (int col = 0; col < Board.GetLength(1); col++)
-                if (Board[0, col] == 0) //check if empty
-                {
-                    int[,] tempBoard = CopyBoard(board);  //make the move
-                    PlacePiece(col, tempBoard, MAXIMIZER);
-                    //call minimax recursively and choose the max value
-                    int result = Minimax2(tempBoard, maxDepth, currentDepth + 1, !isMax, alpha, beta);
-                    if (result > best) best = result;
-                    if (best > alpha) alpha = best;
-                    //if (beta <= alpha) break;
-                    if (alpha >= beta) break;
-                }
-            return best;
-        }
-        else// If this minimizer's move 
-        {
-            int best = int.MaxValue;
-            //traverse all cells
-            for (int col = 0; col < Board.GetLength(1); col++)
-                if (Board[0, col] == 0) //check if empty
-                {
-                    int[,] tempBoard = CopyBoard(board); //make the move
-                    PlacePiece(col, tempBoard, MINIMIZER);
-                    int result = Minimax2(tempBoard, maxDepth, currentDepth + 1, !isMax, alpha, beta); //call minimax recursively and choose the mininum value
-                    if (result < best) best = result;
-                    if (best < beta) beta = best;
-                    if (alpha >= beta) break;//if(beta <= alpha) break;
-                }
-            return best;
+            return hash;
         }
     }
-
-    int Evaluate2(int[,] board, bool isMax) //Scoring function - There should be 69 possible ways to win on an empty board.
-    {
-
-        // horizontalCheck 
-        for (int j = 0; j < boardColumns - 3; j++)
-            for (int i = 0; i < boardRows; i++)
-                if (board[i, j] == MAXIMIZER && board[i, j + 1] == MAXIMIZER && board[i, j + 2] == MAXIMIZER && board[i, j + 3] == MAXIMIZER) return winScore;
-                else if (board[i, j] == MINIMIZER && board[i, j + 1] == MINIMIZER && board[i, j + 2] == MINIMIZER && board[i, j + 3] == MINIMIZER) return loseScore;
-
-        // verticalCheck
-        for (int i = 0; i < boardRows - 3; i++)
-            for (int j = 0; j < boardColumns; j++)
-                if (board[i, j] == MAXIMIZER && board[i + 1, j] == MAXIMIZER && board[i + 2, j] == MAXIMIZER && board[i + 3, j] == MAXIMIZER) return winScore;
-                else if (board[i, j] == MINIMIZER && board[i + 1, j] == MINIMIZER && board[i + 2, j] == MINIMIZER && board[i + 3, j] == MINIMIZER) return loseScore;
-
-        // ascendingDiagonalCheck 
-        for (int i = 3; i < boardRows; i++)
-            for (int j = 0; j < boardColumns - 3; j++)
-                if (board[i, j] == MAXIMIZER && board[i - 1, j + 1] == MAXIMIZER && board[i - 2, j + 2] == MAXIMIZER && board[i - 3, j + 3] == MAXIMIZER) return winScore;
-                else if (board[i, j] == MINIMIZER && board[i - 1, j + 1] == MINIMIZER && board[i - 2, j + 2] == MINIMIZER && board[i - 3, j + 3] == MINIMIZER) return loseScore;
-
-        // descendingDiagonalCheck
-        for (int i = 3; i < boardRows; i++)
-            for (int j = 3; j < boardColumns; j++)
-                if (board[i, j] == MAXIMIZER && board[i - 1, j - 1] == MAXIMIZER && board[i - 2, j - 2] == MAXIMIZER && board[i - 3, j - 3] == MAXIMIZER) return winScore;
-                else if (board[i, j] == MINIMIZER && board[i - 1, j - 1] == MINIMIZER && board[i - 2, j - 2] == MINIMIZER && board[i - 3, j - 3] == MINIMIZER) return loseScore;
-
-        return EvaluateContent(board); 
-    }
+    #endregion
 
 }

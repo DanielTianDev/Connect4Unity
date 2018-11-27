@@ -38,7 +38,7 @@ RenderSettings:
   m_ReflectionIntensity: 1
   m_CustomReflection: {fileID: 0}
   m_Sun: {fileID: 0}
-  m_IndirectSpecularColor: {r: 0.44657844, g: 0.49641222, b: 0.57481694, a: 1}
+  m_IndirectSpecularColor: {r: 0.44657898, g: 0.4964133, b: 0.5748178, a: 1}
   m_UseRadianceAmbientProbe: 0
 --- !u!157 &3
 LightmapSettings:
@@ -209,11 +209,11 @@ RectTransform:
   m_Father: {fileID: 840209886}
   m_RootOrder: 5
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0.5, y: 0}
-  m_AnchorMax: {x: 0.5, y: 0}
+  m_AnchorMin: {x: 1, y: 0.5}
+  m_AnchorMax: {x: 1, y: 0.5}
   m_AnchoredPosition: {x: 0, y: 0}
-  m_SizeDelta: {x: 438.2, y: 30}
-  m_Pivot: {x: 0.5, y: 0}
+  m_SizeDelta: {x: 283.2, y: 572}
+  m_Pivot: {x: 1, y: 0.5}
 --- !u!114 &84195154
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -226,8 +226,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_Material: {fileID: 0}
-  m_Color: {r: 1, g: 1, b: 1, a: 1}
-  m_RaycastTarget: 1
+  m_Color: {r: 1, g: 0.5287268, b: 0, a: 1}
+  m_RaycastTarget: 0
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
@@ -235,7 +235,7 @@ MonoBehaviour:
       Version=1.0.0.0, Culture=neutral, PublicKeyToken=null
   m_FontData:
     m_Font: {fileID: 10102, guid: 0000000000000000e000000000000000, type: 0}
-    m_FontSize: 15
+    m_FontSize: 16
     m_FontStyle: 0
     m_BestFit: 0
     m_MinSize: 1
@@ -246,7 +246,7 @@ MonoBehaviour:
     m_HorizontalOverflow: 0
     m_VerticalOverflow: 0
     m_LineSpacing: 1
-  m_Text: New Text
+  m_Text: 
 --- !u!222 &84195155
 CanvasRenderer:
   m_ObjectHideFlags: 0
@@ -409,7 +409,7 @@ Transform:
   m_GameObject: {fileID: 289037151}
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
   m_LocalPosition: {x: -5.8426127, y: -4.8993063, z: -64.61814}
-  m_LocalScale: {x: 172.578, y: 94.26742, z: 0.01}
+  m_LocalScale: {x: 203.2, y: 113.1, z: 0.01}
   m_Children: []
   m_Father: {fileID: 1817284277}
   m_RootOrder: 0
@@ -675,7 +675,7 @@ MonoBehaviour:
     m_HorizontalOverflow: 0
     m_VerticalOverflow: 0
     m_LineSpacing: 1
-  m_Text: 'Difficulty: 1'
+  m_Text: 'Difficulty: 5'
 --- !u!222 &601940923
 CanvasRenderer:
   m_ObjectHideFlags: 0
@@ -1065,7 +1065,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_Material: {fileID: 0}
-  m_Color: {r: 0, g: 0.06795311, b: 1, a: 1}
+  m_Color: {r: 1, g: 0.46135104, b: 0, a: 1}
   m_RaycastTarget: 1
   m_OnCullStateChanged:
     m_PersistentCalls:
@@ -1225,9 +1225,6 @@ MonoBehaviour:
     type: 2}
   maximizerPrefab: {fileID: 1210590140757018, guid: 3c315430f09649245b8b209876e8419a,
     type: 2}
-  Robot: {fileID: 0}
-  robotAnimator: {fileID: 0}
-  robotSpeed: 3
   animationPrefabs:
   - {fileID: 130082, guid: 59425be1f6ac1414d8416392496e3374, type: 2}
   - {fileID: 175514, guid: a63b2ed29b85e374bae0dc2f03a048e8, type: 2}
@@ -1245,14 +1242,13 @@ MonoBehaviour:
   explosionPrefab: {fileID: 1590225418817344, guid: f1883d7dac069fe4a8268aa845f3dcef,
     type: 2}
   cursorPrefab: {fileID: 100006, guid: 0438351a6e6422d43a09930e9be00ee9, type: 2}
-  aiTurnDelay: 1
-  MaxDepth: 7
-  MaxIterativeTimeout: 1
+  MAX_DEPTH: 5
+  robotSpeed: 3.5
   currentTimer: 0
-  testmaximumTraversed: 0
   evalCount: 0
-  DANGER_FACTOR: 150
-  GOOD_FACTOR: 25
+  hashHitCount: 0
+  DefensiveFactor: 150
+  OffensiveFactor: 25
 --- !u!4 &846908539
 Transform:
   m_ObjectHideFlags: 0
@@ -1682,7 +1678,7 @@ GameObject:
   - component: {fileID: 1591816609}
   - component: {fileID: 1591816608}
   m_Layer: 5
-  m_Name: Button
+  m_Name: ResetButton
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -2181,8 +2177,8 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: 0.0000076293945, y: 0}
-  m_SizeDelta: {x: 301.1, y: 124.1}
+  m_AnchoredPosition: {x: 0, y: 0}
+  m_SizeDelta: {x: 600, y: 124.100006}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &2048479928
 MonoBehaviour:
@@ -2468,9 +2464,9 @@ MonoBehaviour:
   m_HandleRect: {fileID: 2132915731}
   m_Direction: 0
   m_MinValue: 0
-  m_MaxValue: 5
+  m_MaxValue: 15
   m_WholeNumbers: 1
-  m_Value: 1
+  m_Value: 5
   m_OnValueChanged:
     m_PersistentCalls:
       m_Calls:
